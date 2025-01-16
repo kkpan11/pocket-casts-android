@@ -7,9 +7,10 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.compose.components.DialogButtonState
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
+import au.com.shiftyjelly.pocketcasts.repositories.download.FixDownloadsWorker
 import au.com.shiftyjelly.pocketcasts.repositories.file.FileStorage
 import au.com.shiftyjelly.pocketcasts.repositories.file.FolderLocation
 import au.com.shiftyjelly.pocketcasts.repositories.file.StorageException
@@ -37,7 +38,7 @@ class StorageSettingsViewModel
     private val fileStorage: FileStorage,
     private val fileUtil: FileUtilWrapper,
     private val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(initState())
@@ -91,7 +92,7 @@ class StorageSettingsViewModel
         this.permissionGranted = permissionGranted
         this.sdkVersion = sdkVersion
         viewModelScope.launch {
-            episodeManager.observeDownloadedEpisodes()
+            episodeManager.findDownloadedEpisodesRxFlowable()
                 .collect { downloadedEpisodes ->
                     val downloadSize = downloadedEpisodes.sumOf { it.sizeInBytes }
                     mutableState.value = mutableState.value.copy(
@@ -158,8 +159,20 @@ class StorageSettingsViewModel
         analyticsTracker.track(AnalyticsEvent.SETTINGS_STORAGE_CLEAR_DOWNLOAD_CACHE)
     }
 
+    fun fixDownloadedFiles() {
+        FixDownloadsWorker.run(context)
+        viewModelScope.launch {
+            mutableAlertDialog.emit(
+                createAlertDialogState(
+                    title = context.getString(LR.string.settings_fix_downloads_started_message),
+                    showCancel = false,
+                ),
+            )
+        }
+    }
+
     private fun onStorageDataWarningCheckedChange(isChecked: Boolean) {
-        settings.warnOnMeteredNetwork.set(isChecked)
+        settings.warnOnMeteredNetwork.set(isChecked, updateModifiedAt = true)
         updateMobileDataWarningState()
     }
 
@@ -172,7 +185,7 @@ class StorageSettingsViewModel
     }
 
     private fun onBackgroundRefreshCheckedChange(isChecked: Boolean) {
-        settings.backgroundRefreshPodcasts.set(isChecked)
+        settings.backgroundRefreshPodcasts.set(isChecked, updateModifiedAt = true)
         updateBackgroundRefreshState()
     }
 
@@ -390,21 +403,26 @@ class StorageSettingsViewModel
     private fun createAlertDialogState(
         title: String,
         @StringRes message: Int? = null,
+        showCancel: Boolean = true,
     ) = AlertDialogState(
         title = title,
         message = message?.let { context.getString(message) },
-        buttons = listOf(
-            DialogButtonState(
-                text = context.getString(LR.string.cancel).uppercase(
-                    Locale.getDefault(),
+        buttons = buildList {
+            if (showCancel) {
+                add(
+                    DialogButtonState(
+                        text = context.getString(LR.string.cancel).uppercase(),
+                        onClick = {},
+                    ),
+                )
+            }
+            add(
+                DialogButtonState(
+                    text = context.getString(LR.string.ok),
+                    onClick = {},
                 ),
-                onClick = {},
-            ),
-            DialogButtonState(
-                text = context.getString(LR.string.ok),
-                onClick = {},
-            ),
-        ),
+            )
+        },
     )
 
     fun onShown() {

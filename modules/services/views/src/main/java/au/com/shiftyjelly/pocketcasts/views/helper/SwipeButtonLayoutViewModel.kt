@@ -5,7 +5,7 @@ import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.EpisodeAnalytics
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.BaseEpisode
@@ -17,7 +17,7 @@ import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.UserEpisodeManager
-import au.com.shiftyjelly.pocketcasts.views.dialog.ShareDialog
+import au.com.shiftyjelly.pocketcasts.views.dialog.ShareDialogFactory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class SwipeButtonLayoutViewModel @Inject constructor(
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     @ApplicationContext private val context: Context,
     private val episodeAnalytics: EpisodeAnalytics,
     private val episodeManager: EpisodeManager,
@@ -35,12 +35,12 @@ class SwipeButtonLayoutViewModel @Inject constructor(
     private val podcastManager: PodcastManager,
     private val userEpisodeManager: UserEpisodeManager,
     @ApplicationScope private val applicationScope: CoroutineScope,
+    private val shareDialogFactory: ShareDialogFactory,
 ) : ViewModel() {
 
     fun share(
         episode: PodcastEpisode,
         fragmentManager: FragmentManager,
-        context: Context,
         swipeSource: EpisodeItemTouchHelper.SwipeSource,
     ) {
         viewModelScope.launch {
@@ -49,16 +49,11 @@ class SwipeButtonLayoutViewModel @Inject constructor(
                 swipeAction = EpisodeItemTouchHelper.SwipeAction.SHARE,
             )
 
-            val podcast = podcastManager.findPodcastByUuidSuspend(episode.podcastUuid) ?: return@launch
+            val podcast = podcastManager.findPodcastByUuid(episode.podcastUuid) ?: return@launch
 
-            ShareDialog(
-                episode = episode,
-                podcast = podcast,
-                fragmentManager = fragmentManager,
-                context = context,
-                shouldShowPodcast = false,
-                analyticsTracker = analyticsTracker,
-            ).show(sourceView = SourceView.EPISODE_SWIPE_ACTION)
+            shareDialogFactory
+                .shareEpisode(podcast, episode, SourceView.EPISODE_SWIPE_ACTION)
+                .show(fragmentManager, "share_dialog")
         }
     }
 
@@ -127,7 +122,7 @@ class SwipeButtonLayoutViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.Default) {
             if (!episode.isArchived) {
                 trackSwipeAction(swipeSource, EpisodeItemTouchHelper.SwipeAction.ARCHIVE)
-                episodeManager.archive(episode, playbackManager)
+                episodeManager.archiveBlocking(episode, playbackManager)
                 episodeAnalytics.trackEvent(
                     event = AnalyticsEvent.EPISODE_ARCHIVED,
                     source = swipeSourceToSourceView(swipeSource),
@@ -135,7 +130,7 @@ class SwipeButtonLayoutViewModel @Inject constructor(
                 )
             } else {
                 trackSwipeAction(swipeSource, EpisodeItemTouchHelper.SwipeAction.UNARCHIVE)
-                episodeManager.unarchive(episode)
+                episodeManager.unarchiveBlocking(episode)
                 episodeAnalytics.trackEvent(
                     event = AnalyticsEvent.EPISODE_UNARCHIVED,
                     source = swipeSourceToSourceView(swipeSource),

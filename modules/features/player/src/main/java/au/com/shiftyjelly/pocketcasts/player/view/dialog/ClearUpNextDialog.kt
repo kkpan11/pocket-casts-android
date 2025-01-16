@@ -3,7 +3,7 @@ package au.com.shiftyjelly.pocketcasts.player.view.dialog
 import android.content.Context
 import androidx.fragment.app.FragmentManager
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.player.R
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.playback.UpNextSource
@@ -19,7 +19,7 @@ class ClearUpNextDialog(
     private val source: UpNextSource = UpNextSource.UNKNOWN,
     private val removeNowPlaying: Boolean,
     private val playbackManager: PlaybackManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     context: Context,
 ) : ConfirmationDialog() {
 
@@ -41,14 +41,16 @@ class ClearUpNextDialog(
         }
     }
 
-    fun showOrClear(fragmentManager: FragmentManager) {
+    fun showOrClear(fragmentManager: FragmentManager, tag: String) {
         val episodeCount = playbackManager.upNextQueue.queueEpisodes.size
         return if (episodeCount >= 3) {
-            show(fragmentManager, "mini_player_clear_dialog")
+            showClearUpNextConfirmationDialog(fragmentManager, tag)
         } else {
             clear()
         }
     }
+
+    fun showClearUpNextConfirmationDialog(fragmentManager: FragmentManager, tag: String) = show(fragmentManager, tag)
 
     companion object {
         private const val SOURCE_KEY = "source"

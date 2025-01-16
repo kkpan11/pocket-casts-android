@@ -12,6 +12,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
+import au.com.shiftyjelly.pocketcasts.player.binding.setPlaybackState
 import au.com.shiftyjelly.pocketcasts.player.databinding.FragmentVideoBinding
 import au.com.shiftyjelly.pocketcasts.player.view.PlayerSeekBar
 import au.com.shiftyjelly.pocketcasts.player.viewmodel.VideoViewModel
@@ -20,9 +21,11 @@ import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.playback.SimplePlayer
 import au.com.shiftyjelly.pocketcasts.views.extensions.hide
 import au.com.shiftyjelly.pocketcasts.views.extensions.show
+import au.com.shiftyjelly.pocketcasts.views.helper.toCircle
 import com.airbnb.lottie.LottieAnimationView
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlin.time.Duration
 import au.com.shiftyjelly.pocketcasts.ui.R as UR
 
 @AndroidEntryPoint
@@ -38,9 +41,6 @@ class VideoFragment : Fragment(), PlayerSeekBar.OnUserSeekListener {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val binding = FragmentVideoBinding.inflate(inflater, container, false)
         this.binding = binding
-
-        binding.lifecycleOwner = viewLifecycleOwner
-        binding.viewModel = viewModel
 
         // video under the status and navigation bar
         setupSystemUi()
@@ -70,8 +70,8 @@ class VideoFragment : Fragment(), PlayerSeekBar.OnUserSeekListener {
         binding.seekBar.changeListener = this
         binding.toolbar.setNavigationOnClickListener { activity?.finish() }
 
-        binding.skipBackwardInSecs = "${settings.skipBackInSecs.value}"
-        binding.skipForwardInSecs = "${settings.skipForwardInSecs.value}"
+        binding.skipBackText.text = "${settings.skipBackInSecs.value}"
+        binding.jumpForwardText.text = "${settings.skipForwardInSecs.value}"
 
         binding.playButton.setCircleTintColor(ContextCompat.getColor(context, UR.color.transparent))
 
@@ -82,14 +82,17 @@ class VideoFragment : Fragment(), PlayerSeekBar.OnUserSeekListener {
                 it.startActivity(intent)
             }
         }
+        binding.skipBack.toCircle(true)
+        binding.skipForward.toCircle(true)
 
-        viewModel.playbackState.observe(viewLifecycleOwner) {
+        viewModel.playbackState.observe(viewLifecycleOwner) { playbackState ->
             val newPlayer = (playbackManager.player as? SimplePlayer)?.exoPlayer
 
             // setPlayer returns straight away if the player is the same so calling this too much doesn't matter.
             // This ensures while the full screen player is visible, the surface isn't set from somewhere else causing
             // this player to appear blank.
             binding.videoView.player = newPlayer
+            binding.seekBar.setPlaybackState(playbackState)
         }
 
         viewModel.controlsVisible.observe(viewLifecycleOwner) { visible ->
@@ -155,12 +158,13 @@ class VideoFragment : Fragment(), PlayerSeekBar.OnUserSeekListener {
         viewModel.seekStarted()
     }
 
-    override fun onSeekPositionChanging(progress: Int) {
+    override fun onSeekPositionChanging(progress: Duration) {
     }
 
-    override fun onSeekPositionChangeStop(progress: Int, seekComplete: () -> Unit) {
-        viewModel.seekToMs(progress)
-        playbackManager.trackPlaybackSeek(progress, SourceView.FULL_SCREEN_VIDEO)
+    override fun onSeekPositionChangeStop(progress: Duration, seekComplete: () -> Unit) {
+        val progressMs = progress.inWholeMilliseconds.toInt()
+        viewModel.seekToMs(progressMs)
+        playbackManager.trackPlaybackSeek(progressMs, SourceView.FULL_SCREEN_VIDEO)
         seekComplete()
     }
 }

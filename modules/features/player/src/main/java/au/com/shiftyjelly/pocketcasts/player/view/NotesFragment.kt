@@ -15,7 +15,7 @@ import androidx.core.os.bundleOf
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.player.databinding.FragmentNotesBinding
 import au.com.shiftyjelly.pocketcasts.player.viewmodel.NotesViewModel
 import au.com.shiftyjelly.pocketcasts.player.viewmodel.PlayerViewModel
@@ -30,6 +30,8 @@ import au.com.shiftyjelly.pocketcasts.views.extensions.show
 import au.com.shiftyjelly.pocketcasts.views.extensions.showIf
 import au.com.shiftyjelly.pocketcasts.views.fragments.BaseFragment
 import au.com.shiftyjelly.pocketcasts.views.helper.IntentUtil
+import au.com.shiftyjelly.pocketcasts.views.helper.applyTimeLong
+import au.com.shiftyjelly.pocketcasts.views.helper.setLongStyleDate
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import timber.log.Timber
@@ -42,7 +44,7 @@ class NotesFragment : BaseFragment() {
 
     @Inject lateinit var playbackManager: PlaybackManager
 
-    @Inject lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     private val playerViewModel: PlayerViewModel by activityViewModels()
     private val viewModel: NotesViewModel by viewModels()
@@ -65,14 +67,17 @@ class NotesFragment : BaseFragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         playerViewModel.playingEpisodeLive.observe(viewLifecycleOwner) {
-            viewModel.loadEpisode(it.first, it.second)
+            val (episode, backgroundColor) = it
+            viewModel.loadEpisode(episode, backgroundColor)
 
-            binding?.root?.setBackgroundColor(it.second)
-            binding?.showNotes?.setBackgroundColor(it.second)
+            binding?.root?.setBackgroundColor(backgroundColor)
+            binding?.showNotes?.setBackgroundColor(backgroundColor)
+            binding?.title?.text = episode.title
+            binding?.date?.setLongStyleDate(episode.publishedDate)
+            binding?.time?.applyTimeLong(episode.durationMs)
         }
 
         binding = FragmentNotesBinding.inflate(inflater, container, false)
-        binding?.lifecycleOwner = viewLifecycleOwner
 
         binding?.progressBar?.apply {
             setIndicatorColor(ThemeColor.playerContrast03(theme.activeTheme))
@@ -91,8 +96,6 @@ class NotesFragment : BaseFragment() {
             val notes = if (state is ShowNotesState.Loaded) state.showNotes else ""
             loadShowNotes(notes)
         }
-
-        binding?.viewModel = viewModel
 
         return binding?.root
     }
@@ -120,6 +123,8 @@ class NotesFragment : BaseFragment() {
                 settings.loadsImagesAutomatically = true
                 isScrollbarFadingEnabled = false
                 isVerticalScrollBarEnabled = false
+                // stop the web view jumping after loading
+                isFocusable = false
                 setBackgroundColor(Color.TRANSPARENT)
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

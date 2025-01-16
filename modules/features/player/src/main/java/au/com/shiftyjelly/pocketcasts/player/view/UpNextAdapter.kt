@@ -6,56 +6,74 @@ import android.content.res.ColorStateList
 import android.graphics.ColorFilter
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import android.widget.ImageButton
 import androidx.annotation.ColorInt
+import androidx.appcompat.widget.TooltipCompat
 import androidx.core.view.isVisible
-import androidx.databinding.DataBindingUtil
 import androidx.fragment.app.FragmentManager
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.localization.helper.RelativeDateFormatter
 import au.com.shiftyjelly.pocketcasts.localization.helper.TimeHelper
 import au.com.shiftyjelly.pocketcasts.models.entity.BaseEpisode
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.player.R
+import au.com.shiftyjelly.pocketcasts.player.databinding.AdapterUpNextBinding
 import au.com.shiftyjelly.pocketcasts.player.databinding.AdapterUpNextFooterBinding
 import au.com.shiftyjelly.pocketcasts.player.databinding.AdapterUpNextPlayingBinding
 import au.com.shiftyjelly.pocketcasts.player.viewmodel.PlayerViewModel
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
+import au.com.shiftyjelly.pocketcasts.preferences.model.ArtworkConfiguration.Element
 import au.com.shiftyjelly.pocketcasts.repositories.extensions.getSummaryText
-import au.com.shiftyjelly.pocketcasts.repositories.images.PodcastImageLoader
-import au.com.shiftyjelly.pocketcasts.repositories.images.into
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
+import au.com.shiftyjelly.pocketcasts.repositories.images.loadInto
+import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.playback.UpNextSource
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
+import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingFlow
+import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingLauncher
+import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingUpgradeSource
+import au.com.shiftyjelly.pocketcasts.ui.extensions.themed
+import au.com.shiftyjelly.pocketcasts.ui.helper.FragmentHostListener
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import au.com.shiftyjelly.pocketcasts.ui.theme.ThemeColor
 import au.com.shiftyjelly.pocketcasts.utils.extensions.dpToPx
+import au.com.shiftyjelly.pocketcasts.utils.extensions.getActivity
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import au.com.shiftyjelly.pocketcasts.views.helper.SwipeButtonLayoutFactory
+import au.com.shiftyjelly.pocketcasts.views.helper.setEpisodeTimeLeft
 import au.com.shiftyjelly.pocketcasts.views.multiselect.MultiSelectEpisodesHelper
 import com.airbnb.lottie.LottieAnimationView
 import com.airbnb.lottie.LottieProperty
 import com.airbnb.lottie.SimpleColorFilter
 import com.airbnb.lottie.model.KeyPath
 import com.airbnb.lottie.value.LottieValueCallback
+import com.google.android.material.snackbar.Snackbar
 import timber.log.Timber
+import au.com.shiftyjelly.pocketcasts.images.R as IR
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
 class UpNextAdapter(
     context: Context,
-    val
-    imageLoader: PodcastImageLoader,
     val episodeManager: EpisodeManager,
     val listener: UpNextListener,
     val multiSelectHelper: MultiSelectEpisodesHelper,
     val fragmentManager: FragmentManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     private val upNextSource: UpNextSource,
     private val settings: Settings,
     private val swipeButtonLayoutFactory: SwipeButtonLayoutFactory,
+    private val playbackManager: PlaybackManager,
 ) : ListAdapter<Any, RecyclerView.ViewHolder>(UPNEXT_ADAPTER_DIFF) {
     private val dateFormatter = RelativeDateFormatter(context)
+    private val imageRequestFactory = PocketCastsImageRequestFactory(
+        context,
+        cornerRadius = 4,
+    ).themed()
 
     var isPlaying: Boolean = false
         set(value) {
@@ -69,26 +87,29 @@ class UpNextAdapter(
             notifyDataSetChanged()
         }
 
+    private var isSignedInAsPaidUser: Boolean = false
+    private var isUpNextNotEmpty: Boolean = false
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
         return when (viewType) {
             R.layout.adapter_up_next -> UpNextEpisodeViewHolder(
-                binding = DataBindingUtil.inflate(inflater, R.layout.adapter_up_next, parent, false),
+                binding = AdapterUpNextBinding.inflate(inflater, parent, false),
                 listener = listener,
                 dateFormatter = dateFormatter,
-                imageLoader = imageLoader,
+                imageRequestFactory = imageRequestFactory,
                 episodeManager = episodeManager,
                 swipeButtonLayoutFactory = swipeButtonLayoutFactory,
+                settings = settings,
             )
-            R.layout.adapter_up_next_footer -> HeaderViewHolder(DataBindingUtil.inflate(inflater, R.layout.adapter_up_next_footer, parent, false))
-            R.layout.adapter_up_next_playing -> PlayingViewHolder(DataBindingUtil.inflate(inflater, R.layout.adapter_up_next_playing, parent, false))
+            R.layout.adapter_up_next_footer -> HeaderViewHolder(AdapterUpNextFooterBinding.inflate(inflater, parent, false))
+            R.layout.adapter_up_next_playing -> PlayingViewHolder(AdapterUpNextPlayingBinding.inflate(inflater, parent, false))
             else -> throw IllegalStateException("Unknown view type in up next")
         }
     }
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-        val item = getItem(position)
-        when (item) {
+        when (val item = getItem(position)) {
             is BaseEpisode -> bindEpisodeRow(holder as UpNextEpisodeViewHolder, item)
             is PlayerViewModel.UpNextSummary -> (holder as HeaderViewHolder).bind(item)
             is UpNextPlaying -> (holder as PlayingViewHolder).bind(item)
@@ -145,24 +166,93 @@ class UpNextAdapter(
         (holder as? UpNextEpisodeViewHolder)?.clearDisposable()
     }
 
+    fun updateUserSignInState(isSignedInAsPaidUser: Boolean) {
+        this.isSignedInAsPaidUser = isSignedInAsPaidUser
+    }
+
+    fun updateUpNextEmptyState(isUpNextNotEmpty: Boolean) {
+        this.isUpNextNotEmpty = isUpNextNotEmpty
+    }
+
     inner class HeaderViewHolder(val binding: AdapterUpNextFooterBinding) : RecyclerView.ViewHolder(binding.root) {
-        init {
-            binding.btnClear.setOnClickListener { listener.onClearUpNext() }
-        }
 
         fun bind(header: PlayerViewModel.UpNextSummary) {
             with(binding) {
-                episodeCount = header.episodeCount
+                emptyUpNextContainer.isVisible = header.episodeCount == 0
                 val time = TimeHelper.getTimeDurationShortString(timeMs = (header.totalTimeSecs * 1000).toLong(), context = root.context)
-                totalTime = root.resources.getString(LR.string.player_up_next_time_remaining, time)
+                lblUpNextTime.isVisible = hasEpisodeInProgress()
+                lblUpNextTime.text = if (header.episodeCount == 0) {
+                    root.resources.getString(LR.string.player_up_next_time_left, time)
+                } else {
+                    root.resources.getQuantityString(LR.plurals.player_up_next_header_title, header.episodeCount, header.episodeCount, time)
+                }
+
+                shuffle.isVisible = isUpNextNotEmpty && FeatureFlag.isEnabled(Feature.UP_NEXT_SHUFFLE)
+                shuffle.updateShuffleButton()
+
+                shuffle.setOnClickListener {
+                    if (isSignedInAsPaidUser) {
+                        val newValue = !settings.upNextShuffle.value
+                        analyticsTracker.track(AnalyticsEvent.UP_NEXT_SHUFFLE_ENABLED, mapOf("value" to newValue, SOURCE_KEY to upNextSource.analyticsValue))
+
+                        if (newValue) {
+                            (root.context.getActivity() as? FragmentHostListener)?.snackBarView()?.let { snackBarView ->
+                                Snackbar.make(snackBarView, root.resources.getString(LR.string.up_next_shuffle_enable_confirmation_message), Snackbar.LENGTH_LONG).show()
+                            }
+                        }
+
+                        settings.upNextShuffle.set(newValue, updateModifiedAt = false)
+                    } else {
+                        OnboardingLauncher.openOnboardingFlow(root.context.getActivity(), OnboardingFlow.Upsell(OnboardingUpgradeSource.UP_NEXT_SHUFFLE))
+                    }
+
+                    shuffle.updateShuffleButton()
+                }
+
                 root.layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                executePendingBindings()
             }
         }
+
+        private fun ImageButton.updateShuffleButton() {
+            if (!FeatureFlag.isEnabled(Feature.UP_NEXT_SHUFFLE)) return
+
+            this.setImageResource(
+                when {
+                    !isSignedInAsPaidUser -> IR.drawable.shuffle_plus_feature_icon
+                    settings.upNextShuffle.value -> IR.drawable.shuffle_enabled
+                    else -> IR.drawable.shuffle
+                },
+            )
+
+            this.contentDescription = context.getString(
+                when {
+                    isSignedInAsPaidUser -> LR.string.up_next_shuffle_button_content_description
+                    settings.upNextShuffle.value -> LR.string.up_next_shuffle_disable_button_content_description
+                    else -> LR.string.up_next_shuffle_button_content_description
+                },
+            )
+
+            if (isSignedInAsPaidUser) {
+                this.setImageTintList(
+                    ColorStateList.valueOf(
+                        if (settings.upNextShuffle.value) ThemeColor.primaryIcon01(theme) else ThemeColor.primaryIcon02(theme),
+                    ),
+                )
+            }
+
+            TooltipCompat.setTooltipText(
+                this,
+                context.getString(LR.string.up_next_shuffle_button_content_description),
+            )
+        }
+
+        private fun hasEpisodeInProgress() = playbackManager.getCurrentEpisode() != null
     }
 
     inner class PlayingViewHolder(val binding: AdapterUpNextPlayingBinding) : RecyclerView.ViewHolder(binding.root) {
-        var loadedUuid: String? = null
+        private var loadedUuid: String? = null
+        private val cardCornerRadius: Float = 4.dpToPx(itemView.context.resources.displayMetrics).toFloat()
+        private val cardElevation: Float = 2.dpToPx(itemView.context.resources.displayMetrics).toFloat()
 
         init {
             binding.root.setOnClickListener {
@@ -174,19 +264,20 @@ class UpNextAdapter(
         fun bind(playingState: UpNextPlaying) {
             Timber.d("Playing state episode: ${playingState.episode.playedUpTo}")
             binding.chapterProgress.theme = theme
-            binding.playingState = playingState
+            binding.chapterProgress.progress = playingState.progressPercent
+            binding.title.text = playingState.episode.title
+            binding.downloaded.isVisible = playingState.episode.isDownloaded
+            binding.info.setEpisodeTimeLeft(playingState.episode)
             binding.date.text = playingState.episode.getSummaryText(
                 dateFormatter = dateFormatter,
                 tintColor = ThemeColor.primaryText02(theme),
                 showDuration = false,
                 context = binding.date.context,
             )
-            binding.reorder.imageTintList = ColorStateList.valueOf(ThemeColor.primaryInteractive01(theme))
-            binding.executePendingBindings()
+            binding.reorder.imageTintList = ColorStateList.valueOf(ThemeColor.primaryText01(theme))
 
             if (loadedUuid != playingState.episode.uuid) {
-                imageLoader.radiusPx = 3.dpToPx(itemView.context)
-                imageLoader.load(playingState.episode).into(binding.image)
+                imageRequestFactory.create(playingState.episode, settings.artworkConfiguration.value.useEpisodeArtwork(Element.UpNext)).loadInto(binding.image)
                 loadedUuid = playingState.episode.uuid
             }
 
@@ -194,6 +285,9 @@ class UpNextAdapter(
                 isVisible = isPlaying
                 applyColorFilter(ThemeColor.primaryText01(theme))
             }
+
+            binding.imageCardView.radius = cardCornerRadius
+            binding.imageCardView.elevation = cardElevation
         }
     }
 

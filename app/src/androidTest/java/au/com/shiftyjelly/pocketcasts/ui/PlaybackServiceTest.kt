@@ -38,7 +38,6 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.timeout
 import org.mockito.kotlin.verify
-import org.mockito.kotlin.verifyNoMoreInteractions
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackServiceTest {
@@ -90,19 +89,19 @@ class PlaybackServiceTest {
         }
         service.upNextQueue = upNextQueue
         val podcastManager = mock<PodcastManager> {
-            onBlocking { findPodcastByUuidSuspend(podcastOne.uuid) }.doReturn(podcastOne)
-            onBlocking { findPodcastByUuidSuspend(podcastTwo.uuid) }.doReturn(podcastTwo)
+            onBlocking { findPodcastByUuid(podcastOne.uuid) }.doReturn(podcastOne)
+            onBlocking { findPodcastByUuid(podcastTwo.uuid) }.doReturn(podcastTwo)
         }
         service.podcastManager = podcastManager
         val episodeManager = mock<EpisodeManager> {
-            on { findEpisodesWhere(any(), any()) }.doReturn(filterEpisodes)
-            onBlocking { findLatestEpisodeToPlay() }.doReturn(latestEpisode)
+            on { findEpisodesWhereBlocking(any(), any()) }.doReturn(filterEpisodes)
+            onBlocking { findLatestEpisodeToPlayBlocking() }.doReturn(latestEpisode)
         }
         service.episodeManager = episodeManager
         val playlistManager = mock<PlaylistManager> {
-            onBlocking { findAllSuspend() }.doReturn(filters)
+            onBlocking { findAll() }.doReturn(filters)
             onBlocking { findByUuid(filter.uuid) }.doReturn(filter)
-            on { findEpisodes(playlist = filters.first(), episodeManager = episodeManager, playbackManager = service.playbackManager) }.doReturn(filterEpisodes)
+            on { findEpisodesBlocking(playlist = filters.first(), episodeManager = episodeManager, playbackManager = service.playbackManager) }.doReturn(filterEpisodes)
         }
         service.playlistManager = playlistManager
 
@@ -184,6 +183,6 @@ class PlaybackServiceTest {
             .build()
         service.testPlaybackStateChange(metaData, stopped)
         testScheduler.triggerActions()
-        verifyNoMoreInteractions(testNotificationManager)
+        verify(testNotificationManager, timeout(5000).times(1)).cancel(eq(NotificationId.PLAYING.value))
     }
 }

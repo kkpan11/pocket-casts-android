@@ -59,16 +59,24 @@ class SettingsViewModel @Inject constructor(
                     _state.update { it.copy(refreshState = refreshState) }
                 }
         }
+        viewModelScope.launch {
+            settings.warnOnMeteredNetwork.flow.collectLatest { warnOnMeteredNetwork ->
+                _state.update { it.copy(showDataWarning = warnOnMeteredNetwork) }
+            }
+        }
+        viewModelScope.launch {
+            settings.backgroundRefreshPodcasts.flow.collectLatest { refreshInBackground ->
+                _state.update { it.copy(refreshInBackground = refreshInBackground) }
+            }
+        }
     }
 
     fun setWarnOnMeteredNetwork(warnOnMeteredNetwork: Boolean) {
-        settings.warnOnMeteredNetwork.set(warnOnMeteredNetwork)
-        _state.update { it.copy(showDataWarning = warnOnMeteredNetwork) }
+        settings.warnOnMeteredNetwork.set(warnOnMeteredNetwork, updateModifiedAt = true)
     }
 
     fun setRefreshPodcastsInBackground(isChecked: Boolean) {
-        settings.backgroundRefreshPodcasts.set(isChecked)
-        _state.update { it.copy(refreshInBackground = isChecked) }
+        settings.backgroundRefreshPodcasts.set(isChecked, updateModifiedAt = true)
     }
 
     fun signOut() {

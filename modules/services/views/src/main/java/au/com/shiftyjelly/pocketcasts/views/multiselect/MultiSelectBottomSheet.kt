@@ -8,7 +8,7 @@ import androidx.core.os.bundleOf
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.localization.extensions.getStringPlural
 import au.com.shiftyjelly.pocketcasts.repositories.chromecast.CastManager
@@ -35,7 +35,7 @@ class MultiSelectBottomSheet : BaseDialogFragment() {
 
     @Inject lateinit var castManager: CastManager
 
-    @Inject lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     var multiSelectHelper: MultiSelectEpisodesHelper? = null
 
@@ -67,7 +67,7 @@ class MultiSelectBottomSheet : BaseDialogFragment() {
         recyclerView.layoutManager = LinearLayoutManager(recyclerView.context, LinearLayoutManager.VERTICAL, false)
         recyclerView.addItemDecoration(DividerItemDecoration(recyclerView.context, LinearLayoutManager.VERTICAL))
 
-        val items = arguments?.getIntArray(ARG_ACTION_IDS)?.map { MultiSelectEpisodeAction.ALL_BY_ID[it] } ?: emptyList()
+        val items = arguments?.getIntArray(ARG_ACTION_IDS)?.map { MultiSelectEpisodeAction.ALL_BY_ACTION_ID[it] } ?: emptyList()
         adapter.submitList(items + listOf(MultiSelectAction.SelectAll))
 
         multiSelectHelper?.selectedCount?.observe(viewLifecycleOwner) {
@@ -86,7 +86,7 @@ class MultiSelectBottomSheet : BaseDialogFragment() {
     }
 
     private fun onClick(item: MultiSelectAction) {
-        multiSelectHelper?.onMenuItemSelected(item.actionId, resources, parentFragmentManager)
+        multiSelectHelper?.onMenuItemSelected(item.actionId, resources, requireActivity())
         dismiss()
     }
 

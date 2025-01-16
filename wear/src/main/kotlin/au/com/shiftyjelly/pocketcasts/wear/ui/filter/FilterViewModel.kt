@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.models.entity.Playlist
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
+import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PlaylistManager
@@ -23,6 +24,7 @@ class FilterViewModel @Inject constructor(
     private val playlistManager: PlaylistManager,
     private val episodeManager: EpisodeManager,
     private val playbackManager: PlaybackManager,
+    settings: Settings,
 ) : ViewModel() {
 
     private val filterUuid: String = savedStateHandle[FilterScreen.argumentFilterUuid] ?: ""
@@ -38,11 +40,11 @@ class FilterViewModel @Inject constructor(
         ) : UiState()
     }
 
-    val uiState = playlistManager.observeByUuidAsList(filterUuid)
+    val uiState = playlistManager.findByUuidAsListRxFlowable(filterUuid)
         .switchMap { filters ->
             val filter = filters.firstOrNull()
             if (filter != null) {
-                playlistManager.observeEpisodes(filter, episodeManager, playbackManager)
+                playlistManager.observeEpisodesBlocking(filter, episodeManager, playbackManager)
                     .map {
                         if (it.isEmpty()) UiState.Empty(filter) else UiState.Loaded(filter = filter, episodes = it)
                     }
@@ -54,4 +56,6 @@ class FilterViewModel @Inject constructor(
         .subscribeOn(Schedulers.io())
         .asFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, FiltersViewModel.UiState.Loading)
+
+    val artworkConfiguration = settings.artworkConfiguration.flow
 }

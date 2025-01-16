@@ -15,9 +15,13 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.widget.Toast
 import androidx.media.MediaBrowserServiceCompat
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.localization.BuildConfig
+import au.com.shiftyjelly.pocketcasts.localization.R
 import au.com.shiftyjelly.pocketcasts.models.entity.BaseEpisode
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
@@ -25,7 +29,7 @@ import au.com.shiftyjelly.pocketcasts.models.to.FolderItem
 import au.com.shiftyjelly.pocketcasts.models.to.SubscriptionStatus
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
-import au.com.shiftyjelly.pocketcasts.preferences.Settings.MediaNotificationControls.Companion.items
+import au.com.shiftyjelly.pocketcasts.preferences.model.AutoPlaySource
 import au.com.shiftyjelly.pocketcasts.repositories.extensions.id
 import au.com.shiftyjelly.pocketcasts.repositories.notification.NotificationDrawer
 import au.com.shiftyjelly.pocketcasts.repositories.notification.NotificationHelper
@@ -39,25 +43,40 @@ import au.com.shiftyjelly.pocketcasts.repositories.podcast.PlaylistManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.UserEpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.SubscriptionManager
-import au.com.shiftyjelly.pocketcasts.servers.ServerManager
-import au.com.shiftyjelly.pocketcasts.servers.list.ListServerManager
-import au.com.shiftyjelly.pocketcasts.servers.podcast.PodcastCacheServerManager
+import au.com.shiftyjelly.pocketcasts.servers.ServiceManager
+import au.com.shiftyjelly.pocketcasts.servers.list.ListServiceManager
+import au.com.shiftyjelly.pocketcasts.servers.podcast.PodcastCacheServiceManager
 import au.com.shiftyjelly.pocketcasts.utils.IS_RUNNING_UNDER_TEST
 import au.com.shiftyjelly.pocketcasts.utils.SchedulerProvider
-import au.com.shiftyjelly.pocketcasts.utils.SentryHelper
 import au.com.shiftyjelly.pocketcasts.utils.Util
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
 import com.jakewharton.rxrelay2.BehaviorRelay
 import dagger.hilt.android.AndroidEntryPoint
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.rxkotlin.subscribeBy
+import io.reactivex.schedulers.Schedulers
+import java.util.Timer
+import java.util.TimerTask
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.ZERO
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx2.asObservable
 import kotlinx.coroutines.rx2.awaitSingleOrNull
 import timber.log.Timber
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
@@ -114,15 +133,19 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
 
     @Inject lateinit var settings: Settings
 
-    @Inject lateinit var serverManager: ServerManager
+    @Inject lateinit var serviceManager: ServiceManager
 
     @Inject lateinit var notificationHelper: NotificationHelper
 
     @Inject lateinit var subscriptionManager: SubscriptionManager
 
-    @Inject lateinit var listServerManager: ListServerManager
+    @Inject lateinit var listServiceManager: ListServiceManager
 
-    @Inject lateinit var podcastCacheServerManager: PodcastCacheServerManager
+    @Inject lateinit var podcastCacheServiceManager: PodcastCacheServiceManager
+
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
+
+    @Inject lateinit var sleepTimer: SleepTimer
 
     var mediaController: MediaControllerCompat? = null
         set(value) {
@@ -138,6 +161,9 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
     lateinit var notificationManager: PlayerNotificationManager
 
     private val disposables = CompositeDisposable()
+
+    private var sleepTimerDisposable: Disposable? = null
+    private var currentTimeLeft: Duration = ZERO
 
     override val coroutineContext: CoroutineContext
         get() = Dispatchers.Default
@@ -157,12 +183,15 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
 
         mediaController = MediaControllerCompat(this, mediaSession)
         notificationManager = PlayerNotificationManagerImpl(this)
+
+        observePlaybackState()
     }
 
     override fun onDestroy() {
         super.onDestroy()
 
         disposables.clear()
+        sleepTimerDisposable?.dispose()
 
         LogBuffer.i(LogBuffer.TAG_PLAYBACK, "Playback service destroyed")
     }
@@ -186,18 +215,19 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
                 accept(currentMetadataCompat)
             }
         }
+        private val artworkConfiguration = settings.artworkConfiguration.flow.asObservable()
 
         init {
-            Observables.combineLatest(playbackStatusRelay, mediaMetadataRelay)
+            Observables.combineLatest(playbackStatusRelay, mediaMetadataRelay, artworkConfiguration)
                 .observeOn(SchedulerProvider.io)
                 // only generate new notifications for a different playback state and episode. Also if we are playing but aren't a foreground service something isn't right
-                .distinctUntilChanged { oldPair: Pair<PlaybackStateCompat, MediaMetadataCompat>, newPair: Pair<PlaybackStateCompat, MediaMetadataCompat> ->
+                .distinctUntilChanged { (state1, metadata1, artworkConfiguration1), (state2, metadata2, artworkConfiguration2) ->
                     val isForegroundService = isForegroundService()
-                    (oldPair.first.state == newPair.first.state && oldPair.second.id == newPair.second.id) &&
-                        (isForegroundService && (newPair.first.state == PlaybackStateCompat.STATE_PLAYING || newPair.first.state == PlaybackStateCompat.STATE_BUFFERING))
+                    (state1.state == state2.state && metadata1.id == metadata2.id && artworkConfiguration1 == artworkConfiguration2) &&
+                        (isForegroundService && (state2.state == PlaybackStateCompat.STATE_PLAYING || state2.state == PlaybackStateCompat.STATE_BUFFERING))
                 }
                 // build the notification including artwork in the background
-                .map { (playbackState, metadata) -> playbackState to buildNotification(playbackState.state, metadata) }
+                .map { (playbackState, metadata, artworkConfiguration) -> playbackState to buildNotification(playbackState.state, metadata, artworkConfiguration.useEpisodeArtwork) }
                 .observeOn(SchedulerProvider.mainThread)
                 .subscribeBy(
                     onNext = { (state: PlaybackStateCompat, notification: Notification?) ->
@@ -237,17 +267,6 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
             val isForegroundService = isForegroundService()
             val state = playbackState.state
 
-            // If we have switched to casting we need to remove the notification
-            if (isForegroundService && notification == null && playbackManager.isPlaybackRemote()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
-                LogBuffer.i(LogBuffer.TAG_PLAYBACK, "stopForeground as player is remote")
-            }
-
             // If we are already showing a notification, update it no matter the state.
             if (notification != null && notificationHelper.isShowing(Settings.NotificationId.PLAYING.value)) {
                 Timber.d("Updating playback notification")
@@ -271,12 +290,9 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
                             LogBuffer.i(LogBuffer.TAG_PLAYBACK, "startForeground state: $state")
                         } catch (e: Exception) {
                             LogBuffer.e(LogBuffer.TAG_PLAYBACK, "attempted startForeground for state: $state, but that threw an exception we caught: $e")
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                                e is ForegroundServiceStartNotAllowedException
-                            ) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e is ForegroundServiceStartNotAllowedException) {
                                 addBatteryWarnings()
-                                SentryHelper.recordException(e)
-                                FirebaseAnalyticsTracker.foregroundServiceStartNotAllowedException()
+                                analyticsTracker.track(AnalyticsEvent.PLAYBACK_FOREGROUND_SERVICE_ERROR)
                             }
                         }
                     } else {
@@ -305,8 +321,11 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
                             LogBuffer.i(LogBuffer.TAG_PLAYBACK, "stopForeground state: $state removing notification: $removeNotification")
                         }
 
-                        @Suppress("DEPRECATION")
-                        stopForeground(removeNotification)
+                        // When paused keep the notification otherwise remove it
+                        stopForeground(if (removeNotification) STOP_FOREGROUND_REMOVE else STOP_FOREGROUND_DETACH)
+                        if (removeNotification) {
+                            notificationManager.cancel(Settings.NotificationId.PLAYING.value)
+                        }
                     }
 
                     if (state == PlaybackStateCompat.STATE_ERROR) {
@@ -326,18 +345,18 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
             settings.setTimesToShowBatteryWarning(2 + currentValue)
         }
 
-        private fun buildNotification(state: Int, metadata: MediaMetadataCompat?): Notification? {
+        private fun buildNotification(
+            state: Int,
+            metadata: MediaMetadataCompat?,
+            useEpisodeArtwork: Boolean,
+        ): Notification? {
             if (Util.isAutomotive(this@PlaybackService)) {
-                return null
-            }
-
-            if (playbackManager.isPlaybackRemote()) {
                 return null
             }
 
             val sessionToken = sessionToken
             if (metadata == null || metadata.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID).isEmpty()) return null
-            return if (state != PlaybackStateCompat.STATE_NONE && sessionToken != null) notificationDrawer.buildPlayingNotification(sessionToken) else null
+            return if (state != PlaybackStateCompat.STATE_NONE && sessionToken != null) notificationDrawer.buildPlayingNotification(sessionToken, useEpisodeArtwork) else null
         }
     }
 
@@ -376,6 +395,16 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
 
         if (!clientPackageName.contains("au.com.shiftyjelly.pocketcasts")) {
             LogBuffer.i(LogBuffer.TAG_PLAYBACK, "Client: $clientPackageName connected to media session") // Log things like Android Auto or Assistant connecting
+            if (Util.isAutomotive(applicationContext) && !settings.automotiveConnectedToMediaSession()) {
+                Timer().schedule(
+                    object : TimerTask() {
+                        override fun run() {
+                            settings.setAutomotiveConnectedToMediaSession(true)
+                        }
+                    },
+                    1000,
+                )
+            }
         }
 
         return if (browserRootHints?.getBoolean(BrowserRoot.EXTRA_RECENT) == true) { // Browser root hints is nullable even though it's not declared as such, come on Google
@@ -427,9 +456,9 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
         episodes.addAll(upNextQueue.queueEpisodes.take(NUM_SUGGESTED_ITEMS - 1))
         // add episodes from the top filter
         if (episodes.size < NUM_SUGGESTED_ITEMS) {
-            val topFilter = playlistManager.findAllSuspend().firstOrNull()
+            val topFilter = playlistManager.findAll().firstOrNull()
             if (topFilter != null) {
-                val filterEpisodes = playlistManager.findEpisodes(topFilter, episodeManager, playbackManager)
+                val filterEpisodes = playlistManager.findEpisodesBlocking(topFilter, episodeManager, playbackManager)
                 for (filterEpisode in filterEpisodes) {
                     if (episodes.size >= NUM_SUGGESTED_ITEMS) {
                         break
@@ -442,7 +471,7 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
         }
         // add the latest episode
         if (episodes.size < NUM_SUGGESTED_ITEMS) {
-            val latestEpisode = episodeManager.findLatestEpisodeToPlay()
+            val latestEpisode = episodeManager.findLatestEpisodeToPlayBlocking()
             if (latestEpisode != null && episodes.none { it.uuid == latestEpisode.uuid }) {
                 episodes.add(latestEpisode)
             }
@@ -459,9 +488,9 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
     private suspend fun convertEpisodesToMediaItems(episodes: List<BaseEpisode>): List<MediaBrowserCompat.MediaItem> {
         return episodes.mapNotNull { episode ->
             // find the podcast
-            val podcast = if (episode is PodcastEpisode) podcastManager.findPodcastByUuidSuspend(episode.podcastUuid) else Podcast.userPodcast
+            val podcast = if (episode is PodcastEpisode) podcastManager.findPodcastByUuid(episode.podcastUuid) else Podcast.userPodcast
             // convert to a media item
-            if (podcast == null) null else AutoConverter.convertEpisodeToMediaItem(context = this, episode = episode, parentPodcast = podcast)
+            if (podcast == null) null else AutoConverter.convertEpisodeToMediaItem(context = this, episode = episode, parentPodcast = podcast, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
         }
     }
 
@@ -478,7 +507,7 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
         rootItems.add(podcastItem)
 
         // playlists
-        for (playlist in playlistManager.findAll().filterNot { it.manual }) {
+        for (playlist in playlistManager.findAllBlocking().filterNot { it.manual }) {
             if (playlist.title.equals("video", ignoreCase = true)) continue
 
             val playlistItem = AutoConverter.convertPlaylistToMediaItem(this, playlist)
@@ -511,12 +540,12 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
             folderManager.getHomeFolder().mapNotNull { item ->
                 when (item) {
                     is FolderItem.Folder -> convertFolderToMediaItem(this, item.folder)
-                    is FolderItem.Podcast -> convertPodcastToMediaItem(podcast = item.podcast, context = this)
+                    is FolderItem.Podcast -> convertPodcastToMediaItem(podcast = item.podcast, context = this, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
                 }
             }
         } else {
             podcastManager.findSubscribedSorted().mapNotNull { podcast ->
-                convertPodcastToMediaItem(podcast = podcast, context = this)
+                convertPodcastToMediaItem(podcast = podcast, context = this, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
             }
         }
     }
@@ -524,7 +553,7 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
     suspend fun loadFolderPodcastsChildren(folderUuid: String): List<MediaBrowserCompat.MediaItem> {
         return if (subscriptionManager.getCachedStatus() is SubscriptionStatus.Paid) {
             folderManager.findFolderPodcastsSorted(folderUuid).mapNotNull { podcast ->
-                convertPodcastToMediaItem(podcast = podcast, context = this)
+                convertPodcastToMediaItem(podcast = podcast, context = this, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
             }
         } else {
             emptyList()
@@ -534,25 +563,33 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
     suspend fun loadEpisodeChildren(parentId: String): List<MediaBrowserCompat.MediaItem> {
         // user tapped on a playlist or podcast, show the episodes
         val episodeItems = mutableListOf<MediaBrowserCompat.MediaItem>()
+        val autoPlaySource: AutoPlaySource
 
-        val playlist = if (DOWNLOADS_ROOT == parentId) playlistManager.getSystemDownloadsFilter() else playlistManager.findByUuidSync(parentId)
+        val playlist = if (DOWNLOADS_ROOT == parentId) playlistManager.getSystemDownloadsFilter() else playlistManager.findByUuidBlocking(parentId)
         if (playlist != null) {
-            val episodeList = if (DOWNLOADS_ROOT == parentId) episodeManager.observeDownloadedEpisodes().blockingFirst() else playlistManager.findEpisodes(playlist, episodeManager, playbackManager)
+            val episodeList = if (DOWNLOADS_ROOT == parentId) {
+                autoPlaySource = AutoPlaySource.Downloads
+                episodeManager.findDownloadedEpisodesRxFlowable().blockingFirst()
+            } else {
+                autoPlaySource = AutoPlaySource.fromId(parentId)
+                playlistManager.findEpisodesBlocking(playlist, episodeManager, playbackManager)
+            }
             val topEpisodes = episodeList.take(EPISODE_LIMIT)
             if (topEpisodes.isNotEmpty()) {
                 for (episode in topEpisodes) {
-                    podcastManager.findPodcastByUuidSuspend(episode.podcastUuid)?.let { parentPodcast ->
-                        episodeItems.add(AutoConverter.convertEpisodeToMediaItem(this, episode, parentPodcast, sourceId = playlist.uuid))
+                    podcastManager.findPodcastByUuid(episode.podcastUuid)?.let { parentPodcast ->
+                        episodeItems.add(AutoConverter.convertEpisodeToMediaItem(this, episode, parentPodcast, sourceId = playlist.uuid, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork))
                     }
                 }
             }
         } else {
-            val podcastFound = podcastManager.findPodcastByUuidSuspend(parentId) ?: podcastManager.findOrDownloadPodcastRx(parentId).toMaybe().onErrorComplete().awaitSingleOrNull()
+            autoPlaySource = AutoPlaySource.fromId(parentId)
+            val podcastFound = podcastManager.findPodcastByUuid(parentId) ?: podcastManager.findOrDownloadPodcastRxSingle(parentId).toMaybe().onErrorComplete().awaitSingleOrNull()
             podcastFound?.let { podcast ->
 
                 val showPlayed = settings.autoShowPlayed.value
                 val episodes = episodeManager
-                    .findEpisodesByPodcastOrdered(podcast)
+                    .findEpisodesByPodcastOrderedBlocking(podcast)
                     .filterNot { !showPlayed && (it.isFinished || it.isArchived) }
                     .take(EPISODE_LIMIT)
                     .toMutableList()
@@ -560,32 +597,41 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
                     episodes.sortBy { it.episodeType !is PodcastEpisode.EpisodeType.Trailer } // Bring trailers to the top
                 }
                 episodes.forEach { episode ->
-                    episodeItems.add(AutoConverter.convertEpisodeToMediaItem(this, episode, podcast, groupTrailers = !podcast.isSubscribed))
+                    episodeItems.add(AutoConverter.convertEpisodeToMediaItem(this, episode, podcast, groupTrailers = !podcast.isSubscribed, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork))
                 }
             }
         }
 
+        setAutoPlaySource(autoPlaySource)
+
         return episodeItems
     }
 
+    private fun setAutoPlaySource(autoPlaySource: AutoPlaySource) {
+        settings.trackingAutoPlaySource.set(autoPlaySource, updateModifiedAt = false)
+    }
+
     protected suspend fun loadFilesChildren(): List<MediaBrowserCompat.MediaItem> {
+        setAutoPlaySource(AutoPlaySource.Files)
         return userEpisodeManager.findUserEpisodes().map {
-            AutoConverter.convertEpisodeToMediaItem(this, it, Podcast.userPodcast)
+            AutoConverter.convertEpisodeToMediaItem(this, it, Podcast.userPodcast, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
         }
     }
 
     protected suspend fun loadStarredChildren(): List<MediaBrowserCompat.MediaItem> {
+        setAutoPlaySource(AutoPlaySource.Starred)
         return episodeManager.findStarredEpisodes().take(EPISODE_LIMIT).mapNotNull { episode ->
-            podcastManager.findPodcastByUuid(episode.podcastUuid)?.let { podcast ->
-                AutoConverter.convertEpisodeToMediaItem(context = this, episode = episode, parentPodcast = podcast)
+            podcastManager.findPodcastByUuidBlocking(episode.podcastUuid)?.let { podcast ->
+                AutoConverter.convertEpisodeToMediaItem(context = this, episode = episode, parentPodcast = podcast, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
             }
         }
     }
 
     protected suspend fun loadListeningHistoryChildren(): List<MediaBrowserCompat.MediaItem> {
         return episodeManager.findPlaybackHistoryEpisodes().take(EPISODE_LIMIT).mapNotNull { episode ->
-            podcastManager.findPodcastByUuid(episode.podcastUuid)?.let { podcast ->
-                AutoConverter.convertEpisodeToMediaItem(context = this, episode = episode, parentPodcast = podcast)
+            setAutoPlaySource(AutoPlaySource.fromId(episode.podcastUuid))
+            podcastManager.findPodcastByUuidBlocking(episode.podcastUuid)?.let { podcast ->
+                AutoConverter.convertEpisodeToMediaItem(context = this, episode = episode, parentPodcast = podcast, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork)
             }
         }
     }
@@ -614,7 +660,7 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
             if (termCleaned.length <= 1) {
                 emptyList()
             } else {
-                serverManager.searchForPodcastsSuspend(searchTerm = term, resources = resources).searchResults
+                serviceManager.searchForPodcastsSuspend(searchTerm = term, resources = resources).searchResults
             }
         } catch (ex: Exception) {
             Timber.e(ex)
@@ -627,6 +673,69 @@ open class PlaybackService : MediaBrowserServiceCompat(), CoroutineScope {
         // merge the local and remote podcasts
         val podcasts = (localPodcasts + serverPodcasts).distinctBy { it.uuid }
         // convert podcasts to the media browser format
-        return podcasts.mapNotNull { podcast -> convertPodcastToMediaItem(context = this, podcast = podcast) }
+        return podcasts.mapNotNull { podcast -> convertPodcastToMediaItem(context = this, podcast = podcast, useEpisodeArtwork = settings.artworkConfiguration.value.useEpisodeArtwork) }
+    }
+
+    private fun observePlaybackState() {
+        sleepTimer.stateFlow
+            .map { it }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.IO)
+            .onEach { state ->
+                onSleepTimerStateChange(state)
+            }
+            .catch { throwable ->
+                Timber.e(throwable, "Error observing SleepTimer state")
+            }
+            .launchIn(this)
+    }
+
+    private fun onSleepTimerStateChange(state: SleepTimerState) {
+        if (state.isSleepTimerRunning && state.timeLeft != ZERO) {
+            startOrUpdateSleepTimer(state.timeLeft)
+        } else {
+            cancelSleepTimer()
+        }
+    }
+
+    private fun startOrUpdateSleepTimer(newTimeLeft: Duration) {
+        if (newTimeLeft == ZERO || newTimeLeft.isNegative()) {
+            return
+        }
+
+        if (sleepTimerDisposable == null || sleepTimerDisposable!!.isDisposed) {
+            currentTimeLeft = newTimeLeft
+
+            sleepTimerDisposable = Observable.interval(1, TimeUnit.SECONDS, Schedulers.computation())
+                .takeWhile { currentTimeLeft > ZERO }
+                .doOnNext {
+                    currentTimeLeft = currentTimeLeft.minus(1.seconds)
+                    sleepTimer.updateSleepTimerStatus(sleepTimeRunning = currentTimeLeft != ZERO, timeLeft = currentTimeLeft)
+
+                    if (currentTimeLeft == 5.seconds) {
+                        playbackManager.performVolumeFadeOut(5.0)
+                    }
+
+                    if (currentTimeLeft <= ZERO) {
+                        LogBuffer.i(LogBuffer.TAG_PLAYBACK, "Paused from sleep timer.")
+                        CoroutineScope(Dispatchers.Main).launch {
+                            Toast.makeText(applicationContext, applicationContext.getString(R.string.player_sleep_timer_stopped_your_podcast), Toast.LENGTH_LONG).show()
+                            playbackManager.restorePlayerVolume()
+                        }
+                        playbackManager.pause(sourceView = SourceView.AUTO_PAUSE)
+                        sleepTimer.updateSleepTimerStatus(sleepTimeRunning = false)
+                        cancelSleepTimer()
+                    }
+                }
+                .subscribe()
+        } else {
+            currentTimeLeft = newTimeLeft
+        }
+    }
+
+    private fun cancelSleepTimer() {
+        sleepTimerDisposable?.dispose()
+        sleepTimerDisposable = null
+        currentTimeLeft = ZERO
     }
 }

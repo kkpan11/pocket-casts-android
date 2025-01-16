@@ -1,23 +1,33 @@
 package au.com.shiftyjelly.pocketcasts.repositories.podcast
 
+import android.annotation.SuppressLint
 import android.content.Context
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.db.AppDatabase
+import au.com.shiftyjelly.pocketcasts.models.entity.ChapterIndices
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
+import au.com.shiftyjelly.pocketcasts.models.entity.Podcast.Companion.AUTO_DOWNLOAD_NEW_EPISODES
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
-import au.com.shiftyjelly.pocketcasts.models.to.PodcastGrouping
+import au.com.shiftyjelly.pocketcasts.models.type.AutoDownloadLimitSetting
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodePlayingStatus
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodeStatusEnum
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodesSortType
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
-import au.com.shiftyjelly.pocketcasts.repositories.images.PodcastImageLoader
+import au.com.shiftyjelly.pocketcasts.repositories.download.DownloadHelper
+import au.com.shiftyjelly.pocketcasts.repositories.download.DownloadManager
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
 import au.com.shiftyjelly.pocketcasts.repositories.sync.SyncManager
 import au.com.shiftyjelly.pocketcasts.servers.cdn.ArtworkColors
-import au.com.shiftyjelly.pocketcasts.servers.cdn.StaticServerManager
-import au.com.shiftyjelly.pocketcasts.servers.podcast.PodcastCacheServerManager
+import au.com.shiftyjelly.pocketcasts.servers.cdn.StaticServiceManager
+import au.com.shiftyjelly.pocketcasts.servers.podcast.PodcastCacheServiceManager
 import au.com.shiftyjelly.pocketcasts.servers.sync.PodcastEpisodesResponse
 import au.com.shiftyjelly.pocketcasts.utils.Optional
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
+import coil.executeBlocking
+import coil.imageLoader
+import coil.request.CachePolicy
 import com.jakewharton.rxrelay2.PublishRelay
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.reactivex.Completable
@@ -35,9 +45,11 @@ import timber.log.Timber
 @Singleton
 class SubscribeManager @Inject constructor(
     val appDatabase: AppDatabase,
-    val podcastCacheServerManager: PodcastCacheServerManager,
-    private val staticServerManager: StaticServerManager,
+    val podcastCacheServiceManager: PodcastCacheServiceManager,
+    private val staticServiceManager: StaticServiceManager,
     private val syncManager: SyncManager,
+    private val episodeManager: EpisodeManager,
+    private val downloadManager: DownloadManager,
     @ApplicationContext val context: Context,
     val settings: Settings,
 ) {
@@ -48,16 +60,21 @@ class SubscribeManager @Inject constructor(
     private val uuidsInQueue = HashSet<String>()
     private val podcastDao = appDatabase.podcastDao()
     private val episodeDao = appDatabase.episodeDao()
-    private val imageLoader = PodcastImageLoader(context = context, isDarkTheme = true, transformations = emptyList())
+    private val imageRequestFactory = PocketCastsImageRequestFactory(context, isDarkTheme = true)
 
-    data class PodcastSubscribe(val podcastUuid: String, val sync: Boolean)
+    data class PodcastSubscribe(val podcastUuid: String, val sync: Boolean, val shouldAutoDownload: Boolean)
 
+    @SuppressLint("CheckResult")
     private fun setupSubscribeRelay(): PublishRelay<PodcastSubscribe> {
         val source = PublishRelay.create<PodcastSubscribe>()
         source
             .observeOn(Schedulers.io())
             .doOnNext { info -> Timber.i("Adding podcast to addPodcast queue ${info.podcastUuid}") }
-            .flatMap({ info -> addPodcast(info.podcastUuid, sync = info.sync, subscribed = true).toObservable() }, true, 5)
+            .flatMap({ info ->
+                // shouldAutoDownload = true because the user manually subscribed to the podcast,
+                // so we want to automatically download episodes at this moment.
+                addPodcastRxSingle(info.podcastUuid, sync = info.sync, subscribed = true, shouldAutoDownload = info.shouldAutoDownload).toObservable()
+            }, true, 5)
             .doOnError { throwable -> LogBuffer.e(LogBuffer.TAG_BACKGROUND_TASKS, throwable, "Could not subscribe to podcast") }
             .subscribeBy(
                 onNext = { podcast ->
@@ -72,36 +89,61 @@ class SubscribeManager @Inject constructor(
     /**
      * Subscribe to a podcast on a background queue.
      */
-    fun subscribeOnQueue(podcastUuid: String, sync: Boolean = false) {
-        // We only want to track subscriptions on this device, not ones from sync.
-        // Sync doesn't go through this method
-        FirebaseAnalyticsTracker.subscribedToPodcast()
-
+    fun subscribeOnQueue(podcastUuid: String, sync: Boolean = false, shouldAutoDownload: Boolean) {
         if (uuidsInQueue.contains(podcastUuid)) {
             return
         }
         uuidsInQueue.add(podcastUuid)
-        subscribeRelay.accept(PodcastSubscribe(podcastUuid, sync))
+        subscribeRelay.accept(PodcastSubscribe(podcastUuid, sync, shouldAutoDownload))
     }
 
     /**
      * Subscribe to a podcast and wait.
      */
-    fun addPodcast(podcastUuid: String, sync: Boolean = false, subscribed: Boolean = false): Single<Podcast> {
-        return subscribeToExistingOrServerPodcast(podcastUuid, sync, subscribed)
+    fun addPodcastRxSingle(podcastUuid: String, sync: Boolean = false, subscribed: Boolean = false, shouldAutoDownload: Boolean): Single<Podcast> {
+        return subscribeToExistingOrServerPodcastRxSingle(podcastUuid, sync, subscribed, shouldAutoDownload)
             .flatMap {
                 LogBuffer.i(LogBuffer.TAG_BACKGROUND_TASKS, "Adding podcast $podcastUuid to database")
-                cacheArtwork(it).toSingleDefault(it)
+                cacheArtworkRxCompletable(it).toSingleDefault(it)
             }
             .doOnSuccess {
                 LogBuffer.i(LogBuffer.TAG_BACKGROUND_TASKS, "Added podcast $podcastUuid to database")
                 // update the notification time as any podcasts added after this date will be ignored
                 settings.setNotificationLastSeenToNow()
+
+                if (canDownloadEpisodesAfterFollowPodcast(subscribed, shouldAutoDownload)) {
+                    podcastDao.findByUuidBlocking(podcastUuid)?.let { podcast ->
+                        val episodes = episodeManager.findEpisodesByPodcastOrderedByPublishDateBlocking(podcast)
+                        val numberOfEpisodes = AutoDownloadLimitSetting.getNumberOfEpisodes(settings.autoDownloadLimit.value)
+
+                        episodes.take(numberOfEpisodes).forEach { episode ->
+                            if (episode.isQueued || episode.isDownloaded || episode.isDownloading || episode.isExemptFromAutoDownload) {
+                                return@forEach
+                            }
+
+                            LogBuffer.i(LogBuffer.TAG_BACKGROUND_TASKS, "Auto Downloading $numberOfEpisodes episodes after subscribing to $podcastUuid")
+
+                            DownloadHelper.addAutoDownloadedEpisodeToQueue(
+                                episode,
+                                "Auto Download after subscribing to $podcastUuid",
+                                downloadManager,
+                                episodeManager,
+                                source = SourceView.DOWNLOADS,
+                            )
+                        }
+                    }
+                }
             }
     }
 
-    private fun cacheArtwork(podcast: Podcast): Completable {
-        return Completable.fromAction { imageLoader.cacheSubscribedArtwork(podcast) }.onErrorComplete()
+    private fun cacheArtworkRxCompletable(podcast: Podcast): Completable {
+        return Completable.fromAction {
+            val request = imageRequestFactory.create(podcast)
+                .newBuilder()
+                .memoryCachePolicy(CachePolicy.DISABLED)
+                .build()
+            context.imageLoader.executeBlocking(request)
+        }.onErrorComplete()
     }
 
     fun isSubscribingToPodcast(podcastUuid: String): Boolean {
@@ -112,60 +154,79 @@ class SubscribeManager @Inject constructor(
         return uuidsInQueue
     }
 
-    private fun subscribeToExistingOrServerPodcast(podcastUuid: String, sync: Boolean, subscribed: Boolean): Single<Podcast> {
+    private fun subscribeToExistingOrServerPodcastRxSingle(podcastUuid: String, sync: Boolean, subscribed: Boolean, shouldAutoDownload: Boolean): Single<Podcast> {
         // check if the podcast exists already
-        val subscribedObservable = podcastDao.isSubscribedToPodcastRx(podcastUuid)
+        val subscribedObservable = podcastDao.isSubscribedToPodcastRxSingle(podcastUuid)
         return subscribedObservable.flatMap { isSubscribed ->
             // download the podcast json and add to the database if it doesn't exist
             if (isSubscribed) {
-                subscribeToExistingPodcast(podcastUuid, sync)
+                subscribeToExistingPodcastRxSingle(podcastUuid, sync)
             } else {
-                subscribeToServerPodcast(podcastUuid, sync, subscribed)
+                subscribeToServerPodcastRxSingle(podcastUuid, sync, subscribed, shouldAutoDownload)
             }
         }
     }
 
-    private fun subscribeToExistingPodcast(podcastUuid: String, sync: Boolean): Single<Podcast> {
+    private fun subscribeToExistingPodcastRxSingle(podcastUuid: String, sync: Boolean): Single<Podcast> {
         // set subscribed to true and update the sync status
-        val updateObservable = podcastDao.updateSubscribedRx(subscribed = true, uuid = podcastUuid)
-            .andThen(podcastDao.updateSyncStatusRx(syncStatus = if (sync) Podcast.SYNC_STATUS_NOT_SYNCED else Podcast.SYNC_STATUS_SYNCED, uuid = podcastUuid))
-            .andThen(Completable.fromAction { podcastDao.updateGrouping(PodcastGrouping.All.indexOf(settings.podcastGroupingDefault.value), podcastUuid) })
+        val updateObservable = podcastDao.updateSubscribedRxCompletable(subscribed = true, uuid = podcastUuid)
+            .andThen(podcastDao.updateSyncStatusRxCompletable(syncStatus = if (sync) Podcast.SYNC_STATUS_NOT_SYNCED else Podcast.SYNC_STATUS_SYNCED, uuid = podcastUuid))
+            .andThen(Completable.fromAction { podcastDao.updateGroupingBlocking(settings.podcastGroupingDefault.value, podcastUuid) })
             .andThen(rxCompletable { podcastDao.updateShowArchived(podcastUuid, settings.showArchivedDefault.value) })
         // return the final podcast
-        val findObservable = podcastDao.findByUuidRx(podcastUuid)
+        val findObservable = podcastDao.findByUuidRxMaybe(podcastUuid)
         return updateObservable.andThen(findObservable.toSingle())
     }
 
-    private fun subscribeToServerPodcast(podcastUuid: String, sync: Boolean, subscribed: Boolean): Single<Podcast> {
+    private fun subscribeToServerPodcastRxSingle(podcastUuid: String, sync: Boolean, subscribed: Boolean, shouldAutoDownload: Boolean): Single<Podcast> {
         // download the podcast
-        val podcastObservable = downloadPodcast(podcastUuid)
+        val podcastObservable = downloadPodcastRxSingle(podcastUuid)
             .doOnSuccess { podcast ->
                 // mark sync status
                 podcast.syncStatus = if (sync) Podcast.SYNC_STATUS_NOT_SYNCED else Podcast.SYNC_STATUS_SYNCED
                 podcast.isSubscribed = subscribed
-                podcast.grouping = PodcastGrouping.All.indexOf(settings.podcastGroupingDefault.value)
+                podcast.grouping = settings.podcastGroupingDefault.value
                 podcast.showArchived = settings.showArchivedDefault.value
+                if (FeatureFlag.isEnabled(Feature.CUSTOM_PLAYBACK_SETTINGS)) {
+                    podcastDao.findByUuidBlocking(podcastUuid)?.let { localPodcast ->
+                        podcast.copyPlaybackEffects(
+                            sourcePodcast = localPodcast,
+                        )
+                    }
+                }
+                if (canDownloadEpisodesAfterFollowPodcast(subscribed, shouldAutoDownload)) {
+                    LogBuffer.i(LogBuffer.TAG_BACKGROUND_TASKS, "Update auto download status for $podcastUuid")
+                    podcast.autoDownloadStatus = AUTO_DOWNLOAD_NEW_EPISODES
+                }
             }
         // add the podcast
         val insertPodcastObservable = podcastObservable.flatMap { podcast ->
-            podcastDao.insertRx(podcast)
+            podcastDao.insertRxSingle(podcast)
         }
         // insert episodes
-        return insertPodcastObservable.flatMap { podcast -> subscribeInsertEpisodes(podcast).toSingle { podcast } }
+        return insertPodcastObservable.flatMap { podcast -> subscribeInsertEpisodesRxCompletable(podcast).toSingle { podcast } }
     }
 
-    private fun downloadPodcast(podcastUuid: String): Single<Podcast> {
+    private fun canDownloadEpisodesAfterFollowPodcast(
+        subscribed: Boolean,
+        shouldAutoDownload: Boolean,
+    ): Boolean = subscribed &&
+        settings.autoDownloadOnFollowPodcast.value &&
+        shouldAutoDownload &&
+        FeatureFlag.isEnabled(Feature.AUTO_DOWNLOAD)
+
+    private fun downloadPodcastRxSingle(podcastUuid: String): Single<Podcast> {
         // download the podcast
-        val serverPodcastObservable = podcastCacheServerManager.getPodcast(podcastUuid)
+        val serverPodcastObservable = podcastCacheServiceManager.getPodcast(podcastUuid)
             .subscribeOn(Schedulers.io())
             .doOnSuccess { Timber.i("Downloaded episodes success podcast $podcastUuid") }
         // download the colors
-        val colorObservable = staticServerManager.getColorsSingle(podcastUuid)
+        val colorObservable = staticServiceManager.getColorsSingle(podcastUuid)
             .subscribeOn(Schedulers.io())
             .doOnSuccess { Timber.i("Downloaded colors success podcast $podcastUuid") }
             .onErrorReturn { Optional.empty() }
         // find all podcasts from the database
-        val allPodcastsObservable = podcastDao.findSubscribedRx().subscribeOn(Schedulers.io())
+        val allPodcastsObservable = podcastDao.findSubscribedRxSingle().subscribeOn(Schedulers.io())
         // group the server podcast and all the existing podcasts to calculate the new podcast properties
         val cleanPodcastObservable = Single.zip(
             serverPodcastObservable,
@@ -177,7 +238,7 @@ class SubscribeManager @Inject constructor(
         )
         // add sync information
         if (syncManager.isLoggedIn()) {
-            val syncPodcastObservable = syncManager.getPodcastEpisodes(podcastUuid).subscribeOn(Schedulers.io())
+            val syncPodcastObservable = syncManager.getPodcastEpisodesRxSingle(podcastUuid).subscribeOn(Schedulers.io())
             return Single.zip(cleanPodcastObservable, syncPodcastObservable, BiFunction<Podcast, PodcastEpisodesResponse, Podcast>(this::mergeSyncPodcast))
                 .onErrorResumeNext(cleanPodcastObservable)
         } else {
@@ -185,11 +246,15 @@ class SubscribeManager @Inject constructor(
         }
     }
 
-    private fun subscribeInsertEpisodes(podcast: Podcast): Completable {
+    private fun subscribeInsertEpisodesRxCompletable(podcast: Podcast): Completable {
         // insert the episodes
-        return Completable.fromAction { episodeDao.insertAll(podcast.episodes) }
+        return Completable.fromAction {
+            podcast.episodes.chunked(250).forEach { episodes ->
+                episodeDao.insertAllBlocking(episodes)
+            }
+        }
             // make sure the podcast has the latest episode uuid
-            .andThen(updateLatestEpisodeUuid(podcast.uuid))
+            .andThen(updateLatestEpisodeUuidRxCompletable(podcast.uuid))
     }
 
     private fun cleanPodcast(podcast: Podcast, colors: Optional<ArtworkColors>, allPodcasts: List<Podcast>): Podcast {
@@ -219,6 +284,10 @@ class SubscribeManager @Inject constructor(
         podcast.isShowNotifications = foundEpisodes && allSendingNotifications
         podcast.sortPosition = count
         podcast.episodesSortType = if (podcast.episodesSortType.ordinal == 0) EpisodesSortType.EPISODES_SORT_BY_DATE_DESC else podcast.episodesSortType
+        podcast.episodes.firstOrNull()?.let { episode ->
+            podcast.latestEpisodeUuid = episode.uuid
+            podcast.latestEpisodeDate = episode.publishedDate
+        }
         // give the podcasts and episodes the same added date so we can tell which are new episodes or added with podcast when calculating notifications
         podcast.addedDate = Date()
         // copy colors
@@ -241,9 +310,9 @@ class SubscribeManager @Inject constructor(
     }
 
     // WARNING: only call this when NEW episodes are added, not old ones
-    private fun updateLatestEpisodeUuid(podcastUuid: String): Completable {
-        return episodeDao.findLatestRx(podcastUuid)
-            .flatMapCompletable { episode -> podcastDao.updateLatestEpisodeRx(episode.uuid, episode.publishedDate, podcastUuid) }
+    private fun updateLatestEpisodeUuidRxCompletable(podcastUuid: String): Completable {
+        return episodeDao.findLatestRxMaybe(podcastUuid)
+            .flatMapCompletable { episode -> podcastDao.updateLatestEpisodeRxCompletable(episode.uuid, episode.publishedDate, podcastUuid) }
     }
 
     /**
@@ -257,6 +326,7 @@ class SubscribeManager @Inject constructor(
             episode.isStarred = syncEpisode.starred ?: false
             episode.playedUpTo = syncEpisode.playedUpTo?.toDouble() ?: 0.toDouble()
             episode.isArchived = syncEpisode.isArchived ?: false
+            episode.deselectedChapters = ChapterIndices.fromString(syncEpisode.deselectedChapters)
             episode.setPlayingStatusInt(syncEpisode.playingStatus ?: 1)
             val duration = syncEpisode.duration ?: 0
             if (duration > 0) {

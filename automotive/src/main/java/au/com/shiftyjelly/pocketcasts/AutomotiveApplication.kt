@@ -8,7 +8,8 @@ import androidx.core.content.getSystemService
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.experiments.ExperimentProvider
+import au.com.shiftyjelly.pocketcasts.crashlogging.InitializeRemoteLogging
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.di.ApplicationScope
 import au.com.shiftyjelly.pocketcasts.repositories.download.DownloadManager
@@ -19,16 +20,12 @@ import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.UserEpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.refresh.RefreshPodcastsTask
 import au.com.shiftyjelly.pocketcasts.repositories.user.UserManager
-import au.com.shiftyjelly.pocketcasts.utils.SentryHelper
-import au.com.shiftyjelly.pocketcasts.utils.SentryHelper.AppPlatform
 import au.com.shiftyjelly.pocketcasts.utils.TimberDebugTree
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
 import au.com.shiftyjelly.pocketcasts.utils.log.RxJavaUncaughtExceptionHandling
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
-import com.google.firebase.analytics.FirebaseAnalytics
 import dagger.hilt.android.HiltAndroidApp
-import io.sentry.android.core.SentryAndroid
 import java.io.File
 import java.util.concurrent.Executors
 import javax.inject.Inject
@@ -60,6 +57,12 @@ class AutomotiveApplication : Application(), Configuration.Provider {
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
 
+    @Inject lateinit var initializeRemoteLogging: InitializeRemoteLogging
+
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
+
+    @Inject lateinit var experimentProvider: ExperimentProvider
+
     @Inject @ApplicationScope
     lateinit var applicationScope: CoroutineScope
 
@@ -67,26 +70,23 @@ class AutomotiveApplication : Application(), Configuration.Provider {
         super.onCreate()
 
         RxJavaUncaughtExceptionHandling.setUp()
-        setupSentry()
+        setupRemoteLogging()
         setupLogging()
         setupAnalytics()
         setupApp()
     }
 
-    override fun getWorkManagerConfiguration(): Configuration {
-        return Configuration.Builder()
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
             .setExecutor(Executors.newFixedThreadPool(3))
             .setJobSchedulerJobIdRange(1000, 20000)
             .build()
-    }
 
     private fun setupApp() {
         Log.i(Settings.LOG_TAG_AUTO, "App started. ${settings.getVersion()} (${settings.getVersionCode()})")
 
         runBlocking {
-            FirebaseAnalyticsTracker.setup(FirebaseAnalytics.getInstance(this@AutomotiveApplication), settings)
-
             withContext(Dispatchers.Default) {
                 playbackManager.setup()
                 downloadManager.setup(episodeManager, podcastManager, playlistManager, playbackManager)
@@ -110,11 +110,8 @@ class AutomotiveApplication : Application(), Configuration.Provider {
         Log.d(Settings.LOG_TAG_AUTO, "Terminate")
     }
 
-    private fun setupSentry() {
-        SentryAndroid.init(this) { options ->
-            options.dsn = settings.getSentryDsn()
-            options.setTag(SentryHelper.GLOBAL_TAG_APP_PLATFORM, AppPlatform.AUTOMOTIVE.value)
-        }
+    private fun setupRemoteLogging() {
+        initializeRemoteLogging()
     }
 
     private fun setupLogging() {
@@ -125,6 +122,7 @@ class AutomotiveApplication : Application(), Configuration.Provider {
     }
 
     private fun setupAnalytics() {
-        AnalyticsTracker.init(settings)
+        analyticsTracker.clearAllData()
+        experimentProvider.initialize()
     }
 }

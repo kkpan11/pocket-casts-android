@@ -5,8 +5,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.Playlist
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
@@ -41,7 +40,7 @@ class FilterEpisodeListViewModel @Inject constructor(
     private val playbackManager: PlaybackManager,
     private val downloadManager: DownloadManager,
     private val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
 ) : ViewModel(), CoroutineScope {
 
     companion object {
@@ -68,13 +67,13 @@ class FilterEpisodeListViewModel @Inject constructor(
             settings.streamingMode.flow.asObservable(coroutineContext),
         )
             .toFlowable(BackpressureStrategy.LATEST)
-            .switchMap { playlistManager.observeByUuidAsList(playlistUUID) }
+            .switchMap { playlistManager.findByUuidAsListRxFlowable(playlistUUID) }
             .switchMap { playlists ->
                 Timber.d("Loading playlist $playlist")
                 val playlist = playlists.firstOrNull() // We observe as a list to get notified on delete
                 if (playlist != null) {
                     this.playlist.postValue(playlist)
-                    playlistManager.observeEpisodes(playlist, episodeManager, playbackManager)
+                    playlistManager.observeEpisodesBlocking(playlist, episodeManager, playbackManager)
                 } else {
                     this.playlistDeleted.postValue(true)
                     Flowable.just(emptyList())
@@ -93,7 +92,7 @@ class FilterEpisodeListViewModel @Inject constructor(
     fun deletePlaylist() {
         launch {
             playlistManager.findByUuid(playlistUUID)?.let { playlist ->
-                playlistManager.delete(playlist)
+                playlistManager.deleteBlocking(playlist)
                 analyticsTracker.track(AnalyticsEvent.FILTER_DELETED)
             }
         }
@@ -120,7 +119,7 @@ class FilterEpisodeListViewModel @Inject constructor(
                     listOf(PlaylistProperty.Sort(sortOrder)),
                     PlaylistUpdateSource.FILTER_EPISODE_LIST,
                 )
-                playlistManager.update(playlist, userPlaylistUpdate)
+                playlistManager.updateBlocking(playlist, userPlaylistUpdate)
             }
         }
     }
@@ -134,7 +133,7 @@ class FilterEpisodeListViewModel @Inject constructor(
                     listOf(PlaylistProperty.Starred),
                     PlaylistUpdateSource.FILTER_EPISODE_LIST,
                 )
-                playlistManager.update(playlist, userPlaylistUpdate)
+                playlistManager.updateBlocking(playlist, userPlaylistUpdate)
             }
         }
     }
@@ -144,7 +143,7 @@ class FilterEpisodeListViewModel @Inject constructor(
         val trimmedList = episodes.subList(0, min(MAX_DOWNLOAD_ALL, episodes.count()))
         launch {
             trimmedList.forEach {
-                downloadManager.addEpisodeToQueue(it, "filter download all", false)
+                downloadManager.addEpisodeToQueue(it, "filter download all", fireEvent = false, source = SourceView.FILTERS)
             }
         }
     }
@@ -161,6 +160,5 @@ class FilterEpisodeListViewModel @Inject constructor(
 
     fun trackFilterShown() {
         analyticsTracker.track(AnalyticsEvent.FILTER_SHOWN)
-        FirebaseAnalyticsTracker.openedFilter()
     }
 }

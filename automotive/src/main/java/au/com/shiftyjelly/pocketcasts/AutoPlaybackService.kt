@@ -31,6 +31,7 @@ import au.com.shiftyjelly.pocketcasts.servers.model.DisplayStyle
 import au.com.shiftyjelly.pocketcasts.servers.model.ListType
 import au.com.shiftyjelly.pocketcasts.servers.model.transformWithRegion
 import au.com.shiftyjelly.pocketcasts.servers.server.ListRepository
+import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -57,6 +58,8 @@ class AutoPlaybackService : PlaybackService() {
 
     override fun onCreate() {
         super.onCreate()
+        settings.setAutomotiveConnectedToMediaSession(false)
+
         RefreshPodcastsTask.runNow(this, applicationScope)
 
         Log.d(Settings.LOG_TAG_AUTO, "Auto playback service created")
@@ -122,13 +125,15 @@ class AutoPlaybackService : PlaybackService() {
     }
 
     suspend fun loadFiltersRoot(): List<MediaBrowserCompat.MediaItem> {
-        return playlistManager.findAllSuspend().mapNotNull {
+        return playlistManager.findAll().mapNotNull {
             Log.d(Settings.LOG_TAG_AUTO, "Filters ${it.title}")
 
             try {
                 AutoConverter.convertPlaylistToMediaItem(this, it)
             } catch (e: Exception) {
-                Log.e(Settings.LOG_TAG_AUTO, "Filter ${it.title} load failed", e)
+                val message = "Filter ${it.title} load failed"
+                Log.e(Settings.LOG_TAG_AUTO, message, e)
+                LogBuffer.e(Settings.LOG_TAG_AUTO, message, e)
                 null
             }
         }

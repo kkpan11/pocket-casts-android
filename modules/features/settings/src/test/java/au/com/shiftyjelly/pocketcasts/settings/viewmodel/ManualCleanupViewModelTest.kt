@@ -1,6 +1,6 @@
 package au.com.shiftyjelly.pocketcasts.settings.viewmodel
 
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
@@ -26,7 +26,6 @@ class ManualCleanupViewModelTest {
     val coroutineRule = MainCoroutineRule()
     private lateinit var episodeManager: EpisodeManager
     private lateinit var playbackManager: PlaybackManager
-    private lateinit var analyticsTracker: AnalyticsTrackerWrapper
     private lateinit var viewModel: ManualCleanupViewModel
 
     private val episode: PodcastEpisode = PodcastEpisode(uuid = "1", publishedDate = Date())
@@ -38,10 +37,9 @@ class ManualCleanupViewModelTest {
     fun setUp() {
         episodeManager = mock()
         playbackManager = mock()
-        analyticsTracker = mock()
-        whenever(episodeManager.observeDownloadedEpisodes())
+        whenever(episodeManager.findDownloadedEpisodesRxFlowable())
             .thenReturn(Flowable.generate { listOf(episodes) })
-        viewModel = ManualCleanupViewModel(episodeManager, playbackManager, analyticsTracker)
+        viewModel = ManualCleanupViewModel(episodeManager, playbackManager, AnalyticsTracker.test())
     }
 
     @Test
@@ -70,7 +68,7 @@ class ManualCleanupViewModelTest {
 
     @Test
     fun `given episodes selected, when delete button clicked, then delete action invoked`() {
-        whenever(episodeManager.observeDownloadedEpisodes())
+        whenever(episodeManager.findDownloadedEpisodesRxFlowable())
             .thenReturn(Flowable.generate { listOf(episode) })
         val deleteButtonClickAction = mock<() -> Unit>()
         viewModel.setup(deleteButtonClickAction)
@@ -83,7 +81,7 @@ class ManualCleanupViewModelTest {
 
     @Test
     fun `given episodes not selected, when delete button clicked, then episodes are not deleted`() {
-        whenever(episodeManager.observeDownloadedEpisodes())
+        whenever(episodeManager.findDownloadedEpisodesRxFlowable())
             .thenReturn(Flowable.generate { listOf(episode) })
         viewModel.onDiskSpaceCheckedChanged(isChecked = false, diskSpaceView = diskSpaceView)
 

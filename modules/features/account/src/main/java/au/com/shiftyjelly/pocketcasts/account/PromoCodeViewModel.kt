@@ -9,6 +9,7 @@ import au.com.shiftyjelly.pocketcasts.repositories.subscription.SubscriptionMana
 import au.com.shiftyjelly.pocketcasts.repositories.sync.SyncManager
 import au.com.shiftyjelly.pocketcasts.servers.sync.PromoCodeResponse
 import au.com.shiftyjelly.pocketcasts.servers.sync.parseErrorResponse
+import com.squareup.moshi.Moshi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.reactivex.BackpressureStrategy
 import io.reactivex.Single
@@ -23,6 +24,7 @@ import retrofit2.HttpException
 class PromoCodeViewModel @Inject constructor(
     private val syncManager: SyncManager,
     private val subscriptionManager: SubscriptionManager,
+    private val moshi: Moshi,
 ) : ViewModel() {
     sealed class ViewState {
         object Loading : ViewState()
@@ -35,15 +37,15 @@ class PromoCodeViewModel @Inject constructor(
     val state: MutableLiveData<ViewState> = MutableLiveData(ViewState.Loading)
 
     fun setup(code: String, context: Context) {
-        val signedInFlow = Single.defer<ViewState> { syncManager.redeemPromoCode(code).map { ViewState.Success(it) } }
+        val signedInFlow = Single.defer<ViewState> { syncManager.redeemPromoCodeRxSingle(code).map { ViewState.Success(it) } }
             .flatMap { viewState ->
-                subscriptionManager.getSubscriptionStatus(allowCache = false).map { viewState } // Force reloading of the new subscription status
+                subscriptionManager.getSubscriptionStatusRxSingle(allowCache = false).map { viewState } // Force reloading of the new subscription status
             }
             .observeOn(AndroidSchedulers.mainThread())
             .onErrorReturn(errorHandler(isSignedIn = true, resources = context.resources))
             .toFlowable()
 
-        val signedOutFlow = syncManager.validatePromoCode(code)
+        val signedOutFlow = syncManager.validatePromoCodeRxSingle(code)
             .observeOn(AndroidSchedulers.mainThread())
             .map<ViewState> { ViewState.NotSignedIn(it) }
             .onErrorReturn(errorHandler(isSignedIn = false, resources = context.resources))
@@ -76,7 +78,7 @@ class PromoCodeViewModel @Inject constructor(
         return Function {
             when (it) {
                 is HttpException -> {
-                    val errorResponse = it.parseErrorResponse()
+                    val errorResponse = it.parseErrorResponse(moshi)
                     var message = errorResponse?.messageLocalized(resources) ?: "Unknown error"
                     if (it.code() == 404) {
                         message = if (isSignedIn) {

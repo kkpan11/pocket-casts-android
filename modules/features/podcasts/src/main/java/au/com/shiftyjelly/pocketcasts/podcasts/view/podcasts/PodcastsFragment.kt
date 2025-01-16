@@ -1,6 +1,7 @@
 package au.com.shiftyjelly.pocketcasts.podcasts.view.podcasts
 
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.Parcelable
 import android.view.LayoutInflater
@@ -9,14 +10,16 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.widget.Toolbar
 import androidx.core.os.bundleOf
+import androidx.core.view.updatePadding
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.to.RefreshState
@@ -38,6 +41,7 @@ import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingLauncher
 import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingUpgradeSource
 import au.com.shiftyjelly.pocketcasts.ui.extensions.getColor
 import au.com.shiftyjelly.pocketcasts.ui.helper.FragmentHostListener
+import au.com.shiftyjelly.pocketcasts.utils.extensions.hideShadow
 import au.com.shiftyjelly.pocketcasts.views.adapter.PodcastTouchCallback
 import au.com.shiftyjelly.pocketcasts.views.extensions.showIf
 import au.com.shiftyjelly.pocketcasts.views.fragments.BaseFragment
@@ -47,6 +51,7 @@ import au.com.shiftyjelly.pocketcasts.views.helper.ToolbarColors
 import au.com.shiftyjelly.pocketcasts.views.helper.UiUtil
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 import au.com.shiftyjelly.pocketcasts.views.R as VR
 
@@ -76,7 +81,7 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
 
     @Inject lateinit var castManager: CastManager
 
-    @Inject lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     private var podcastOptionsDialog: PodcastsOptionsDialog? = null
     private var folderOptionsDialog: FolderOptionsDialog? = null
@@ -95,18 +100,22 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
     private val folderUuid: String?
         get() = arguments?.getString(ARG_FOLDER_UUID)
 
+    private var gridOuterPadding: Int = 0
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val context = context ?: return null
         realBinding = FragmentPodcastsBinding.inflate(inflater, container, false)
-
-        binding.lifecycleOwner = viewLifecycleOwner
 
         if (adapter == null) {
             adapter = FolderAdapter(this, settings, context, theme)
         }
 
+        binding.appBarLayout.hideShadow()
+
+        gridOuterPadding = resources.getDimensionPixelSize(VR.dimen.grid_outer_padding)
         binding.recyclerView.let {
             it.adapter = adapter
+            it.addItemDecoration(SpaceItemDecoration())
             ItemTouchHelper(PodcastTouchCallback(this, context)).attachToRecyclerView(it)
         }
 
@@ -122,10 +131,10 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
             val toolbarColors: ToolbarColors
             val navigationIcon: NavigationIcon
             if (folder == null) {
-                toolbarColors = ToolbarColors.Theme(theme = theme, context = context, excludeMenuItems = listOf(R.id.folders_locked))
+                toolbarColors = ToolbarColors.theme(theme = theme, context = context, excludeMenuItems = listOf(R.id.folders_locked))
                 navigationIcon = NavigationIcon.None
             } else {
-                toolbarColors = ToolbarColors.User(color = folder.getColor(context), theme = theme)
+                toolbarColors = ToolbarColors.user(color = folder.getColor(context), theme = theme)
                 navigationIcon = NavigationIcon.BackArrow
             }
             setupToolbarAndStatusBar(
@@ -135,11 +144,7 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
                 navigationIcon = navigationIcon,
             )
 
-            toolbar.menu.findItem(R.id.folders_locked)?.run {
-                isVisible = !isSignedInAsPlusOrPatron
-                setIcon(theme.folderLockedImageName)
-            }
-
+            toolbar.menu.findItem(R.id.folders_locked)?.isVisible = !isSignedInAsPlusOrPatron
             toolbar.menu.findItem(R.id.create_folder)?.isVisible = rootFolder && isSignedInAsPlusOrPatron
             toolbar.menu.findItem(R.id.search_podcasts)?.isVisible = rootFolder
 
@@ -199,10 +204,7 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
         }
 
         binding.btnDiscover.setOnClickListener {
-            (activity as FragmentHostListener).openTab(VR.id.navigation_discover)
-        }
-
-        binding.btnDiscover.setOnClickListener {
+            analyticsTracker.track(AnalyticsEvent.PODCASTS_LIST_DISCOVER_BUTTON_TAPPED)
             (activity as FragmentHostListener).openTab(VR.id.navigation_discover)
         }
 
@@ -312,7 +314,7 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
     private fun adjustViewIfNeeded() {
         val context = activity ?: return
         val orientation = resources.configuration.orientation
-        val widthPx = UiUtil.getContentViewWidthPx(context)
+        val widthPx = UiUtil.getWindowWidthPx(context)
         if (orientation == lastOrientationRefreshed && lastWidthPx == widthPx) return
 
         // screen has rotated, redraw the grid to the right size
@@ -340,6 +342,13 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
             realBinding?.recyclerView?.adapter = adapter
         }
 
+        viewLifecycleOwner.lifecycleScope.launch {
+            settings.bottomInset.collect {
+                val gridOuterPadding = if (settings.podcastGridLayout.value == PodcastGridLayoutType.LIST_VIEW) 0 else gridOuterPadding
+                realBinding?.recyclerView?.updatePadding(gridOuterPadding, gridOuterPadding, gridOuterPadding, gridOuterPadding + it)
+            }
+        }
+
         realBinding?.recyclerView?.layoutManager = layoutManager
         layoutManager.onRestoreInstanceState(savedInstanceState)
     }
@@ -356,7 +365,7 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
 
     override fun onPodcastClick(podcast: Podcast, view: View) {
         analyticsTracker.track(AnalyticsEvent.PODCASTS_LIST_PODCAST_TAPPED)
-        val fragment = PodcastFragment.newInstance(podcastUuid = podcast.uuid)
+        val fragment = PodcastFragment.newInstance(podcastUuid = podcast.uuid, sourceView = SourceView.PODCAST_LIST)
         (activity as FragmentHostListener).addFragment(fragment)
     }
 
@@ -366,5 +375,13 @@ class PodcastsFragment : BaseFragment(), FolderAdapter.ClickListener, PodcastTou
         }
         val fragment = newInstance(folderUuid = folderUuid)
         (activity as FragmentHostListener).addFragment(fragment)
+    }
+
+    inner class SpaceItemDecoration : RecyclerView.ItemDecoration() {
+        private val spacing = resources.getDimensionPixelSize(VR.dimen.grid_item_padding)
+        override fun getItemOffsets(outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State) {
+            val margin = if (settings.podcastGridLayout.value != PodcastGridLayoutType.LIST_VIEW) spacing else 0
+            outRect.set(margin, margin, margin, margin)
+        }
     }
 }

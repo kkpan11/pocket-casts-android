@@ -10,9 +10,10 @@ import android.widget.TextView
 import androidx.core.view.isVisible
 import au.com.shiftyjelly.pocketcasts.discover.R
 import au.com.shiftyjelly.pocketcasts.discover.extensions.updateSubscribeButtonIcon
-import au.com.shiftyjelly.pocketcasts.repositories.images.into
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
+import au.com.shiftyjelly.pocketcasts.repositories.images.loadInto
 import au.com.shiftyjelly.pocketcasts.servers.model.DiscoverPodcast
-import au.com.shiftyjelly.pocketcasts.ui.images.PodcastImageLoaderThemed
+import au.com.shiftyjelly.pocketcasts.ui.extensions.themed
 import au.com.shiftyjelly.pocketcasts.views.extensions.setRippleBackground
 import au.com.shiftyjelly.pocketcasts.ui.R as UR
 
@@ -22,12 +23,40 @@ class PodcastGridRow @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : LinearLayout(context, attrs, defStyleAttr) {
 
-    private val imageLoader = PodcastImageLoaderThemed(context)
+    private var imageRequestFactory = PocketCastsImageRequestFactory(context).themed()
     private val lblTitle: TextView
     private val lblSubtitle: TextView
     private val btnSubscribe: ImageButton
     private val imagePodcast: ImageView
     private var imageSize: Int? = null
+
+    var onSubscribeClickedListener: ((String) -> Unit)? = null
+        set(value) {
+            field = value
+            val listener = if (value != null) {
+                OnClickListener {
+                    val uuid = podcast?.uuid ?: return@OnClickListener
+                    btnSubscribe.updateSubscribeButtonIcon(subscribed = true, colorSubscribed = UR.attr.contrast_01, colorUnsubscribed = UR.attr.contrast_01)
+                    value(uuid)
+                }
+            } else {
+                null
+            }
+            btnSubscribe.setOnClickListener(listener)
+        }
+
+    var onPodcastClickedListener: ((DiscoverPodcast) -> Unit)? = null
+        set(value) {
+            field = value
+            val listener = if (value != null) {
+                OnClickListener {
+                    podcast?.let(value::invoke)
+                }
+            } else {
+                null
+            }
+            setOnClickListener(listener)
+        }
 
     init {
         LayoutInflater.from(context).inflate(R.layout.item_grid, this, true)
@@ -60,6 +89,7 @@ class PodcastGridRow @JvmOverloads constructor(
 
     fun updateImageSize(imageSize: Int) {
         this.imageSize = imageSize
+        this.imageRequestFactory = imageRequestFactory.copy(size = imageSize)
         loadImage()
     }
 
@@ -67,26 +97,9 @@ class PodcastGridRow @JvmOverloads constructor(
         val podcast = podcast
         val imageSize = imageSize
         if (podcast != null && imageSize != null) {
-            imageLoader.loadCoil(podcastUuid = podcast.uuid, size = imageSize).into(imagePodcast)
+            imageRequestFactory.createForPodcast(podcast.uuid).loadInto(imagePodcast)
         }
     }
-
-    var onSubscribeClicked: (() -> Unit)? = null
-        set(value) {
-            field = value
-            btnSubscribe.setOnClickListener {
-                btnSubscribe.updateSubscribeButtonIcon(subscribed = true, colorSubscribed = UR.attr.contrast_01, colorUnsubscribed = UR.attr.contrast_01)
-                onSubscribeClicked?.invoke()
-            }
-        }
-
-    var onPodcastClicked: (() -> Unit)? = null
-        set(value) {
-            field = value
-            this.setOnClickListener {
-                onPodcastClicked?.invoke()
-            }
-        }
 
     fun clear() {
         lblTitle.text = null

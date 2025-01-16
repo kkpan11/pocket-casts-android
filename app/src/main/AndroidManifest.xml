@@ -20,10 +20,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.BLUETOOTH"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="com.android.vending.CHECK_LICENSE"/>
     <uses-permission android:name="com.android.vending.BILLING" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>
 
@@ -38,7 +39,6 @@
             android:supportsRtl="false"
             tools:replace="android:supportsRtl"
             android:theme="@style/ThemeDark"
-            android:networkSecurityConfig="@xml/network_security_config"
             android:localeConfig="@xml/locales_config"
             tools:ignore="UnusedAttribute">
 
@@ -100,7 +100,7 @@
                         android:host="*"
                         android:scheme="pktc"/>
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
@@ -108,13 +108,31 @@
                     android:host="pca.st"
                     android:scheme="https"/>
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
                     android:host="pcast.pocketcasts.net"
                     android:scheme="https"/>
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:host="pocket-casts-main-development.mystagingwebsite.com"
+                    android:scheme="https"
+                    android:pathPrefix="/redeem" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:host="pocketcasts.com"
+                    android:scheme="https"
+                    android:pathPrefix="/redeem" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -255,14 +273,20 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="pocketcasts.com" android:path="/get" />
+                <data android:scheme="https"/>
+                <data android:host="pocketcasts.com"/>
+                <data android:path="/get"/>
+                <data android:pathPrefix="/get/"/>
             </intent-filter>
 
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="pocket-casts-main-development.mystagingwebsite.com" android:path="/get" />
+                <data android:scheme="https"/>
+                <data android:host="pocket-casts-main-development.mystagingwebsite.com"/>
+                <data android:path="/get"/>
+                <data android:pathPrefix="/get/"/>
             </intent-filter>
 
             <meta-data
@@ -492,7 +516,7 @@
             android:targetActivity=".ui.MainActivity"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_pride_2023">
+            android:icon="@mipmap/ic_launcher_pride">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -501,11 +525,6 @@
 
         <activity android:name=".profile.sonos.SonosAppLinkActivity" android:label="@string/profile_sonos"/>
 
-        <activity android:name="com.google.android.gms.oss.licenses.OssLicensesMenuActivity"
-            android:theme="@style/Theme.AppCompat.DayNight"/>
-        <activity android:name="com.google.android.gms.oss.licenses.OssLicensesActivity"
-            android:theme="@style/Theme.AppCompat.DayNight"/>
-
         <!-- services which are periodic or trigerred by the app automatically triggered, eg: can run in the background -->
         <service android:name="au.com.shiftyjelly.pocketcasts.repositories.download.UpdateEpisodeDetailsJob"
                  android:permission="android.permission.BIND_JOB_SERVICE"
@@ -513,14 +532,6 @@
         <service android:name="au.com.shiftyjelly.pocketcasts.repositories.refresh.RefreshPodcastsJob"
                  android:permission="android.permission.BIND_JOB_SERVICE"
                  android:exported="true"/>
-        <service android:name="au.com.shiftyjelly.pocketcasts.repositories.jobs.VersionMigrationsJob"
-                 android:permission="android.permission.BIND_JOB_SERVICE"
-                 android:exported="true"/>
-        <service android:name="au.com.shiftyjelly.pocketcasts.repositories.sync.UpNextSyncJob"
-            android:permission="android.permission.BIND_JOB_SERVICE"
-            android:exported="true"/>
-
-        <receiver android:name="au.com.shiftyjelly.pocketcasts.repositories.playback.SleepTimerReceiver" />
 
         <receiver android:name="au.com.shiftyjelly.pocketcasts.repositories.playback.PlayerBroadcastReceiver"
             android:exported="true">
@@ -546,7 +557,10 @@
             </intent-filter>
         </receiver>
 
-        <receiver android:name="au.com.shiftyjelly.pocketcasts.endofyear.ShareResultReceiver" />
+        <receiver
+            android:name="androidx.mediarouter.media.MediaTransferReceiver"
+            android:exported="true">
+        </receiver>
 
         <service
                 android:name="au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackService"
@@ -629,8 +643,6 @@
 
         <!-- Disable Sentry exception tracking so we can turn it on based on the user preference -->
         <meta-data android:name="io.sentry.auto-init" android:value="false" />
-        <!-- Pass in the Sentry DSN -->
-        <meta-data android:name="au.com.shiftyjelly.pocketcasts.sentryDsn" android:value="${sentryDsn}"/>
     </application>
 
 </manifest>

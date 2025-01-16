@@ -46,10 +46,15 @@ data class UserEpisode(
     @ColumnInfo(name = "tint_color_index") var tintColorIndex: Int = 0,
     @ColumnInfo(name = "has_custom_image") var hasCustomImage: Boolean = false,
     @ColumnInfo(name = "upload_task_id") var uploadTaskId: String? = null,
+    @ColumnInfo(name = "deselected_chapters") override var deselectedChapters: ChapterIndices = ChapterIndices(),
+    @ColumnInfo(name = "deselected_chapters_modified") override var deselectedChaptersModified: Date? = null,
 ) : BaseEpisode, Serializable {
     // temporary variables
     @Ignore
     override var playing: Boolean = false
+
+    @Ignore
+    override var isStarred: Boolean = false
 
     @Ignore
     var hasBookmark: Boolean = false

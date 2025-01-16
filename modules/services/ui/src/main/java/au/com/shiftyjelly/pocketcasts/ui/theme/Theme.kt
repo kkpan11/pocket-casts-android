@@ -202,16 +202,6 @@ class Theme @Inject constructor(private val settings: Settings) {
     val isLightTheme: Boolean
         get() = !isDarkTheme
 
-    val folderLockedImageName: Int
-        get() {
-            return when (activeTheme) {
-                ThemeType.DARK, ThemeType.EXTRA_DARK, ThemeType.ELECTRIC, ThemeType.DARK_CONTRAST -> IR.drawable.folder_lock_dark
-                ThemeType.LIGHT, ThemeType.CLASSIC_LIGHT, ThemeType.LIGHT_CONTRAST, ThemeType.INDIGO -> IR.drawable.folder_lock_light
-                ThemeType.RADIOACTIVE -> IR.drawable.folder_lock_radioactive
-                ThemeType.ROSE -> IR.drawable.folder_lock_rose
-            }
-        }
-
     fun updateTheme(activity: AppCompatActivity, theme: Theme.ThemeType, configuration: Configuration = activity.resources.configuration) {
         activity.setTheme(theme.resourceId)
         if (theme == activeTheme) return
@@ -253,7 +243,7 @@ class Theme @Inject constructor(private val settings: Settings) {
 
             updateTheme(activity, theme)
         } else {
-            updateTheme(activity, activeTheme)
+            updateTheme(activity, getThemeFromPreferences())
         }
     }
 
@@ -271,7 +261,7 @@ class Theme @Inject constructor(private val settings: Settings) {
         ThemeType.fromThemeSetting(settings.theme.value)
 
     private fun setThemeToPreferences(theme: ThemeType) {
-        settings.theme.set(theme.themeSetting)
+        settings.theme.set(theme.themeSetting, updateModifiedAt = true)
     }
 
     private fun getPreferredDarkThemeFromPreferences(): ThemeType =
@@ -281,15 +271,15 @@ class Theme @Inject constructor(private val settings: Settings) {
         ThemeType.fromThemeSetting(settings.lightThemePreference.value)
 
     private fun setPreferredDarkThemeToPreferences(theme: ThemeType) {
-        settings.darkThemePreference.set(theme.themeSetting)
+        settings.darkThemePreference.set(theme.themeSetting, updateModifiedAt = true)
     }
 
     private fun setPreferredLightThemeToPreferences(theme: ThemeType) {
-        settings.lightThemePreference.set(theme.themeSetting)
+        settings.lightThemePreference.set(theme.themeSetting, updateModifiedAt = true)
     }
 
     fun setUseSystemTheme(value: Boolean, activity: AppCompatActivity?) {
-        settings.useSystemTheme.set(value, commit = true)
+        settings.useSystemTheme.set(value, commit = true, updateModifiedAt = true)
 
         if (value && activity != null) {
             setupThemeForConfig(activity, activity.resources.configuration)

@@ -4,7 +4,7 @@ import android.content.Intent
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.compose.buttons.ToggleButtonOption
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType
 import au.com.shiftyjelly.pocketcasts.podcasts.R
@@ -19,7 +19,7 @@ import au.com.shiftyjelly.pocketcasts.localization.R as LR
 class PodcastsOptionsDialog(
     val fragment: Fragment,
     val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
 ) {
     private var showDialog: OptionsDialog? = null
     private var sortDialog: OptionsDialog? = null
@@ -46,7 +46,7 @@ class PodcastsOptionsDialog(
                     descriptionId = LR.string.podcasts_layout_large_grid,
                     isOn = { settings.podcastGridLayout.value == PodcastGridLayoutType.LARGE_ARTWORK },
                     click = {
-                        settings.podcastGridLayout.set(PodcastGridLayoutType.LARGE_ARTWORK)
+                        settings.podcastGridLayout.set(PodcastGridLayoutType.LARGE_ARTWORK, updateModifiedAt = true)
                         trackTapOnModalOption(ModalOption.LAYOUT)
                         trackLayoutChanged(PodcastGridLayoutType.LARGE_ARTWORK)
                     },
@@ -56,7 +56,7 @@ class PodcastsOptionsDialog(
                     descriptionId = LR.string.podcasts_layout_small_grid,
                     isOn = { settings.podcastGridLayout.value == PodcastGridLayoutType.SMALL_ARTWORK },
                     click = {
-                        settings.podcastGridLayout.set(PodcastGridLayoutType.SMALL_ARTWORK)
+                        settings.podcastGridLayout.set(PodcastGridLayoutType.SMALL_ARTWORK, updateModifiedAt = true)
                         trackTapOnModalOption(ModalOption.LAYOUT)
                         trackLayoutChanged(PodcastGridLayoutType.SMALL_ARTWORK)
                     },
@@ -66,7 +66,7 @@ class PodcastsOptionsDialog(
                     descriptionId = LR.string.podcasts_layout_list_view,
                     isOn = { settings.podcastGridLayout.value == PodcastGridLayoutType.LIST_VIEW },
                     click = {
-                        settings.podcastGridLayout.set(PodcastGridLayoutType.LIST_VIEW)
+                        settings.podcastGridLayout.set(PodcastGridLayoutType.LIST_VIEW, updateModifiedAt = true)
                         trackTapOnModalOption(ModalOption.LAYOUT)
                         trackLayoutChanged(PodcastGridLayoutType.LIST_VIEW)
                     },
@@ -109,7 +109,7 @@ class PodcastsOptionsDialog(
                 titleId = order.labelId,
                 checked = order.clientId == sortOrder.clientId,
                 click = {
-                    settings.podcastsSortType.set(order, needsSync = true)
+                    settings.podcastsSortType.set(order, updateModifiedAt = true)
                     trackSortByChanged(order)
                 },
             )
@@ -130,7 +130,7 @@ class PodcastsOptionsDialog(
                 checked = badgeType == BadgeType.OFF,
                 click = {
                     val newBadgeType = BadgeType.OFF
-                    settings.podcastBadgeType.set(newBadgeType)
+                    settings.podcastBadgeType.set(newBadgeType, updateModifiedAt = true)
                     trackBadgeChanged(newBadgeType)
                 },
             )
@@ -139,7 +139,7 @@ class PodcastsOptionsDialog(
                 checked = badgeType == BadgeType.ALL_UNFINISHED,
                 click = {
                     val newBadgeType = BadgeType.ALL_UNFINISHED
-                    settings.podcastBadgeType.set(newBadgeType)
+                    settings.podcastBadgeType.set(newBadgeType, updateModifiedAt = true)
                     trackBadgeChanged(newBadgeType)
                 },
             )
@@ -148,7 +148,7 @@ class PodcastsOptionsDialog(
                 checked = badgeType == BadgeType.LATEST_EPISODE,
                 click = {
                     val newBadgeType = BadgeType.LATEST_EPISODE
-                    settings.podcastBadgeType.set(newBadgeType)
+                    settings.podcastBadgeType.set(newBadgeType, updateModifiedAt = true)
                     trackBadgeChanged(newBadgeType)
                 },
             )

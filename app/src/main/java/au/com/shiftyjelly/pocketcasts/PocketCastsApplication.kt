@@ -6,49 +6,62 @@ import android.os.StrictMode
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
-import au.com.shiftyjelly.pocketcasts.analytics.AnonymousBumpStatsTracker
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
-import au.com.shiftyjelly.pocketcasts.analytics.TracksAnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.experiments.ExperimentProvider
+import au.com.shiftyjelly.pocketcasts.crashlogging.InitializeRemoteLogging
+import au.com.shiftyjelly.pocketcasts.discover.worker.CuratedPodcastsSyncWorker
+import au.com.shiftyjelly.pocketcasts.engage.EngageSdkBridge
+import au.com.shiftyjelly.pocketcasts.models.db.dao.UpNextDao
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodeStatusEnum
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.di.ApplicationScope
 import au.com.shiftyjelly.pocketcasts.repositories.download.DownloadManager
+import au.com.shiftyjelly.pocketcasts.repositories.endofyear.EndOfYearSync
 import au.com.shiftyjelly.pocketcasts.repositories.file.FileStorage
 import au.com.shiftyjelly.pocketcasts.repositories.file.StorageOptions
-import au.com.shiftyjelly.pocketcasts.repositories.jobs.VersionMigrationsJob
+import au.com.shiftyjelly.pocketcasts.repositories.jobs.VersionMigrationsWorker
 import au.com.shiftyjelly.pocketcasts.repositories.notification.NotificationHelper
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
+import au.com.shiftyjelly.pocketcasts.repositories.playback.SleepTimerRestartWhenShakingDevice
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PlaylistManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.UserEpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.SubscriptionManager
+import au.com.shiftyjelly.pocketcasts.repositories.support.DatabaseExportHelper
 import au.com.shiftyjelly.pocketcasts.repositories.sync.SyncManager
 import au.com.shiftyjelly.pocketcasts.repositories.user.StatsManager
 import au.com.shiftyjelly.pocketcasts.repositories.user.UserManager
+import au.com.shiftyjelly.pocketcasts.repositories.widget.WidgetManager
 import au.com.shiftyjelly.pocketcasts.shared.AppLifecycleObserver
+import au.com.shiftyjelly.pocketcasts.shared.DownloadStatisticsReporter
 import au.com.shiftyjelly.pocketcasts.ui.helper.AppIcon
-import au.com.shiftyjelly.pocketcasts.utils.SentryHelper
-import au.com.shiftyjelly.pocketcasts.utils.SentryHelper.AppPlatform
 import au.com.shiftyjelly.pocketcasts.utils.TimberDebugTree
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBufferUncaughtExceptionHandler
 import au.com.shiftyjelly.pocketcasts.utils.log.RxJavaUncaughtExceptionHandling
+import au.com.shiftyjelly.pocketcasts.widget.PlayerWidgetManager
 import coil.Coil
 import coil.ImageLoader
 import com.google.firebase.FirebaseApp
-import com.google.firebase.analytics.FirebaseAnalytics
 import dagger.hilt.android.HiltAndroidApp
-import io.sentry.Sentry
-import io.sentry.android.core.SentryAndroid
-import io.sentry.protocol.User
 import java.io.File
 import java.util.concurrent.Executors
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.rx2.asFlow
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
@@ -87,14 +100,32 @@ class PocketCastsApplication : Application(), Configuration.Provider {
 
     @Inject lateinit var userManager: UserManager
 
-    @Inject lateinit var tracksTracker: TracksAnalyticsTracker
-
-    @Inject lateinit var bumpStatsTracker: AnonymousBumpStatsTracker
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     @Inject lateinit var syncManager: SyncManager
 
+    @Inject lateinit var widgetManager: WidgetManager
+
+    @Inject lateinit var downloadStatisticsReporter: DownloadStatisticsReporter
+
     @Inject @ApplicationScope
     lateinit var applicationScope: CoroutineScope
+
+    @Inject lateinit var playerWidgetManager: PlayerWidgetManager
+
+    @Inject lateinit var upNextDao: UpNextDao
+
+    @Inject lateinit var sleepTimerRestartWhenShakingDevice: SleepTimerRestartWhenShakingDevice
+
+    @Inject lateinit var initializeRemoteLogging: InitializeRemoteLogging
+
+    @Inject lateinit var databaseExportHelper: DatabaseExportHelper
+
+    @Inject lateinit var engageSdkBridge: EngageSdkBridge
+
+    @Inject lateinit var experimentProvider: ExperimentProvider
+
+    @Inject lateinit var endOfYearSync: EndOfYearSync
 
     override fun onCreate() {
         if (BuildConfig.DEBUG) {
@@ -117,47 +148,37 @@ class PocketCastsApplication : Application(), Configuration.Provider {
         super.onCreate()
 
         RxJavaUncaughtExceptionHandling.setUp()
-        setupSentry()
+        setupCrashLogging()
         setupLogging()
         setupAnalytics()
         setupApp()
+        cleanupDatabaseExportFileIfExists()
     }
 
     private fun setupAnalytics() {
-        AnalyticsTracker.register(tracksTracker, bumpStatsTracker)
-        AnalyticsTracker.init(settings)
-        AnalyticsTracker.refreshMetadata()
+        analyticsTracker.clearAllData()
+        analyticsTracker.refreshMetadata()
+        downloadStatisticsReporter.setup()
+        experimentProvider.initialize()
     }
 
-    private fun setupSentry() {
+    private fun setupCrashLogging() {
         Thread.getDefaultUncaughtExceptionHandler()?.let {
             Thread.setDefaultUncaughtExceptionHandler(LogBufferUncaughtExceptionHandler(it))
         }
 
-        SentryAndroid.init(this) { options ->
-            options.dsn = if (settings.sendCrashReports.value) settings.getSentryDsn() else ""
-            options.setTag(SentryHelper.GLOBAL_TAG_APP_PLATFORM, AppPlatform.MOBILE.value)
-        }
-
-        // Link email to Sentry crash reports only if the user has opted in
-        if (settings.linkCrashReportsToUser.value) {
-            syncManager.getEmail()?.let { syncEmail ->
-                val user = User().apply { email = syncEmail }
-                Sentry.setUser(user)
-            }
-        }
+        initializeRemoteLogging()
 
         // Setup the Firebase, the documentation says this isn't needed but in production we sometimes get the following error "FirebaseApp is not initialized in this process au.com.shiftyjelly.pocketcasts. Make sure to call FirebaseApp.initializeApp(Context) first."
         FirebaseApp.initializeApp(this)
     }
 
-    override fun getWorkManagerConfiguration(): Configuration {
-        return Configuration.Builder()
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
             .setExecutor(Executors.newFixedThreadPool(3))
             .setJobSchedulerJobIdRange(1000, 20000)
             .build()
-    }
 
     private fun setupApp() {
         LogBuffer.i("Application", "App started. ${settings.getVersion()} (${settings.getVersionCode()})")
@@ -165,10 +186,6 @@ class PocketCastsApplication : Application(), Configuration.Provider {
         runBlocking {
             appIcon.enableSelectedAlias(appIcon.activeAppIcon)
 
-            FirebaseAnalyticsTracker.setup(
-                analytics = FirebaseAnalytics.getInstance(this@PocketCastsApplication),
-                settings = settings,
-            )
             notificationHelper.setupNotificationChannels()
             appLifecycleObserver.setup()
 
@@ -207,11 +224,11 @@ class PocketCastsApplication : Application(), Configuration.Provider {
 
                 // after the app is installed check it
                 if (isRestoreFromBackup) {
-                    val podcasts = podcastManager.findSubscribed()
+                    val podcasts = podcastManager.findSubscribedBlocking()
                     val restoredFromBackup = podcasts.isNotEmpty()
                     if (restoredFromBackup) {
                         // check to see if the episode files already exist
-                        episodeManager.updateAllEpisodeStatus(EpisodeStatusEnum.NOT_DOWNLOADED)
+                        episodeManager.updateAllEpisodeStatusBlocking(EpisodeStatusEnum.NOT_DOWNLOADED)
                         fileStorage.fixBrokenFiles(episodeManager)
                         // reset stats
                         statsManager.reset()
@@ -226,7 +243,7 @@ class PocketCastsApplication : Application(), Configuration.Provider {
                     Timber.e(e, "Unable to create opml folder.")
                 }
 
-                VersionMigrationsJob.run(
+                VersionMigrationsWorker.performMigrations(
                     podcastManager = podcastManager,
                     settings = settings,
                     syncManager = syncManager,
@@ -239,22 +256,72 @@ class PocketCastsApplication : Application(), Configuration.Provider {
                 // init the stats engine
                 statsManager.initStatsEngine()
 
-                subscriptionManager.connectToGooglePlay(this@PocketCastsApplication)
+                sleepTimerRestartWhenShakingDevice.init() // Begin detecting when the device has been shaken to restart the sleep timer.
             }
         }
 
+        applicationScope.launch { subscriptionManager.initializeBillingConnection() }
         applicationScope.launch(Dispatchers.IO) { fileStorage.fixBrokenFiles(episodeManager) }
 
         userEpisodeManager.monitorUploads(applicationContext)
         downloadManager.beginMonitoringWorkManager(applicationContext)
         userManager.beginMonitoringAccountManager(playbackManager)
+        CuratedPodcastsSyncWorker.enqueuPeriodicWork(this)
+        engageSdkBridge.registerIntegration()
+
+        settings.useDynamicColorsForWidget.flow
+            .onEach { widgetManager.updateWidgetFromSettings(playbackManager) }
+            .launchIn(applicationScope)
+        settings.artworkConfiguration.flow
+            .onEach { widgetManager.updateWidgetEpisodeArtwork(playbackManager) }
+            .launchIn(applicationScope)
+        keepPlayerWidgetsUpdated()
+
+        if (FeatureFlag.isEnabled(Feature.SYNC_EOY_DATA_ON_STARTUP)) {
+            applicationScope.launch { endOfYearSync.sync() }
+        }
 
         Timber.i("Launched ${BuildConfig.APPLICATION_ID}")
+    }
+
+    private fun keepPlayerWidgetsUpdated() {
+        settings.artworkConfiguration.flow
+            .onEach { playerWidgetManager.updateUseEpisodeArtwork(it.useEpisodeArtwork) }
+            .launchIn(applicationScope)
+        settings.useDynamicColorsForWidget.flow
+            .onEach(playerWidgetManager::updateUseDynamicColors)
+            .launchIn(applicationScope)
+        playbackManager.playbackStateRelay.asFlow()
+            .map { state -> state.isPlaying }
+            .distinctUntilChanged()
+            .onEach(playerWidgetManager::updateIsPlaying)
+            .launchIn(applicationScope)
+        val queueFlow = flow {
+            while (true) {
+                emit(upNextDao.getUpNextBaseEpisodes(limit = PlayerWidgetManager.EPISODE_LIMIT))
+                // Emit every second to update playback durations
+                delay(1.seconds)
+            }
+        }
+        queueFlow
+            .distinctUntilChangedBy { queue -> queue.map { it.uuid to it.playedUpToMs } }
+            .onEach(playerWidgetManager::updateQueue)
+            .launchIn(applicationScope)
     }
 
     @Suppress("DEPRECATION")
     private fun findExternalStorageDirectory(): File {
         return Environment.getExternalStorageDirectory()
+    }
+
+    private fun cleanupDatabaseExportFileIfExists() {
+        applicationScope.launch(Dispatchers.IO) {
+            val email = File(applicationContext.filesDir, "email")
+            val zipFile = File(email, "${DatabaseExportHelper.EXPORT_FOLDER_NAME}.zip")
+            if (zipFile.exists()) {
+                databaseExportHelper.cleanup(zipFile)
+            }
+        }
     }
 
     override fun onTerminate() {

@@ -41,7 +41,7 @@ open class BaseFragment : Fragment(), CoroutineScope, HasBackstack {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         if (view.background == null) {
-            view.setBackgroundColor(view.context.getThemeColor(UR.attr.primary_ui_04))
+            view.setBackgroundColor(view.context.getThemeColor(UR.attr.primary_ui_01))
         }
         view.isClickable = true
         view.isFocusable = true
@@ -79,7 +79,7 @@ open class BaseFragment : Fragment(), CoroutineScope, HasBackstack {
         chromeCastButton: ChromeCastButton = ChromeCastButton.None,
         navigationIcon: NavigationIcon = None,
         onNavigationClick: (() -> Unit)? = null,
-        toolbarColors: ToolbarColors? = ToolbarColors.Theme(theme = theme, context = toolbar.context),
+        toolbarColors: ToolbarColors? = ToolbarColors.theme(theme = theme, context = toolbar.context),
     ) {
         toolbar.setup(
             title = title,
@@ -96,6 +96,7 @@ open class BaseFragment : Fragment(), CoroutineScope, HasBackstack {
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onPrepareOptionsMenu(menu: Menu) {
         context?.let {
             menu.tintIcons(it.getThemeColor(UR.attr.secondary_icon_01))

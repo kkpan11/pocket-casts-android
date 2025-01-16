@@ -60,10 +60,13 @@ data class DiscoverRow(
     @field:Json(name = "title") override val title: String,
     @field:Json(name = "source") override val source: String,
     @field:Json(name = "uuid") override val listUuid: String?,
+    @field:Json(name = "category_id") val categoryId: Int?,
     @field:Json(name = "regions") val regions: List<String>,
     @field:Json(name = "sponsored") val sponsored: Boolean = false,
     @field:Json(name = "curated") override val curated: Boolean = false,
     @field:Json(name = "sponsored_podcasts") val sponsoredPodcasts: List<SponsoredPodcast> = emptyList(),
+    @field:Json(name = "popular") val mostPopularCategoriesId: List<Int>?,
+    val regionCode: String? = null,
 ) : NetworkLoadableList {
 
     override fun transformWithReplacements(replacements: Map<String, String>, resources: Resources): DiscoverRow {
@@ -96,7 +99,9 @@ data class DiscoverRow(
             regions = regions,
             sponsored = sponsored,
             curated = curated,
+            categoryId = categoryId,
             sponsoredPodcasts = sponsoredPodcasts,
+            mostPopularCategoriesId = mostPopularCategoriesId,
         )
     }
 }
@@ -243,10 +248,13 @@ data class DiscoverCategory(
     @field:Json(name = "source") override val source: String,
     override val curated: Boolean = false,
 ) : NetworkLoadableList {
+    companion object {
+        const val ALL_CATEGORIES_ID = -99
+    }
     override val title: String
         get() = name
     override val type: ListType
-        get() = ListType.PodcastList()
+        get() = ListType.PodcastList
     override val displayStyle: DisplayStyle
         get() = DisplayStyle.SmallList()
     override val expandedStyle: ExpandedStyle

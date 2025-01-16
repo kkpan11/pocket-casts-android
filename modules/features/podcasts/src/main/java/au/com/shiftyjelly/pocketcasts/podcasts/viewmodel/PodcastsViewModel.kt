@@ -4,7 +4,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.entity.Folder
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.to.FolderItem
@@ -41,7 +41,7 @@ class PodcastsViewModel
     private val episodeManager: EpisodeManager,
     private val folderManager: FolderManager,
     private val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     userManager: UserManager,
 ) : ViewModel(), CoroutineScope {
     var isFragmentChangingConfigurations: Boolean = false
@@ -60,7 +60,7 @@ class PodcastsViewModel
 
     val folderState: LiveData<FolderState> = combineLatest(
         // monitor all subscribed podcasts, get the podcast in 'Episode release date' as the rest can be done in memory
-        podcastManager.observePodcastsOrderByLatestEpisode(),
+        podcastManager.podcastsOrderByLatestEpisodeRxFlowable(),
         // monitor all the folders
         folderManager.observeFolders()
             .switchMap { folders ->
@@ -70,7 +70,7 @@ class PodcastsViewModel
                     // monitor the folder podcasts
                     val observeFolderPodcasts = folders.map { folder ->
                         podcastManager
-                            .observePodcastsInFolderOrderByUserChoice(folder)
+                            .podcastsInFolderOrderByUserChoiceRxFlowable(folder)
                             .map { podcasts ->
                                 FolderItem.Folder(
                                     folder = folder,
@@ -128,10 +128,11 @@ class PodcastsViewModel
 
     private fun buildHomeFolderItems(podcasts: List<Podcast>, folders: List<FolderItem>, podcastSortType: PodcastsSortType): List<FolderItem> {
         if (podcastSortType == PodcastsSortType.EPISODE_DATE_NEWEST_TO_OLDEST) {
+            val folderUuids = folders.mapTo(mutableSetOf()) { it.uuid }
             val items = mutableListOf<FolderItem>()
-            val uuidToFolder = folders.associateBy({ it.uuid }, { it }).toMutableMap()
+            val uuidToFolder = folders.associateByTo(mutableMapOf(), FolderItem::uuid)
             for (podcast in podcasts) {
-                if (podcast.folderUuid == null) {
+                if (podcast.folderUuid == null || !folderUuids.contains(podcast.folderUuid)) {
                     items.add(FolderItem.Podcast(podcast))
                 } else {
                     // add the folder in the position of the podcast with the latest release date
@@ -173,8 +174,8 @@ class PodcastsViewModel
             .toFlowable(BackpressureStrategy.LATEST)
             .switchMap { badgeType ->
                 return@switchMap when (badgeType) {
-                    BadgeType.ALL_UNFINISHED -> episodeManager.getPodcastUuidToBadgeUnfinished()
-                    BadgeType.LATEST_EPISODE -> episodeManager.getPodcastUuidToBadgeLatest()
+                    BadgeType.ALL_UNFINISHED -> episodeManager.getPodcastUuidToBadgeUnfinishedRxFlowable()
+                    BadgeType.LATEST_EPISODE -> episodeManager.getPodcastUuidToBadgeLatestRxFlowable()
                     else -> Flowable.just(emptyMap())
                 }
             }.toLiveData()
@@ -244,7 +245,7 @@ class PodcastsViewModel
 
         val folder = folder
         if (folder == null) {
-            settings.podcastsSortType.set(PodcastsSortType.DRAG_DROP, needsSync = true)
+            settings.podcastsSortType.set(PodcastsSortType.DRAG_DROP, updateModifiedAt = true)
         } else {
             folderManager.updateSortType(folderUuid = folder.uuid, podcastsSortType = PodcastsSortType.DRAG_DROP)
         }
@@ -275,7 +276,7 @@ class PodcastsViewModel
     fun trackFolderShown(folderUuid: String) {
         launch {
             val properties = HashMap<String, Any>()
-            properties[SORT_ORDER_KEY] = (folderManager.findByUuid(folderUuid)?.podcastsSortType ?: PodcastsSortType.DATE_ADDED_OLDEST_TO_NEWEST).analyticsValue
+            properties[SORT_ORDER_KEY] = (folderManager.findByUuid(folderUuid)?.podcastsSortType ?: PodcastsSortType.DATE_ADDED_NEWEST_TO_OLDEST).analyticsValue
             properties[NUMBER_OF_PODCASTS_KEY] = folderManager.findFolderPodcastsSorted(folderUuid).size
             analyticsTracker.track(AnalyticsEvent.FOLDER_SHOWN, properties)
         }

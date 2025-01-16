@@ -4,12 +4,15 @@ import android.accounts.AccountManager
 import android.accounts.OnAccountsUpdateListener
 import android.content.Context
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
+import au.com.shiftyjelly.pocketcasts.analytics.TracksAnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.experiments.ExperimentProvider
 import au.com.shiftyjelly.pocketcasts.models.to.SignInState
 import au.com.shiftyjelly.pocketcasts.models.to.SubscriptionStatus
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.di.ApplicationScope
+import au.com.shiftyjelly.pocketcasts.repositories.endofyear.EndOfYearSync
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.playback.UpNextQueue
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
@@ -20,12 +23,13 @@ import au.com.shiftyjelly.pocketcasts.repositories.podcast.UserEpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.searchhistory.SearchHistoryManager
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.SubscriptionManager
 import au.com.shiftyjelly.pocketcasts.repositories.sync.SyncManager
-import au.com.shiftyjelly.pocketcasts.utils.SentryHelper
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
+import com.automattic.android.tracks.crashlogging.CrashLogging
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.reactivex.BackpressureStrategy
 import io.reactivex.Flowable
 import io.reactivex.Single
+import io.reactivex.rxkotlin.combineLatest
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
@@ -48,8 +52,12 @@ class UserManagerImpl @Inject constructor(
     val subscriptionManager: SubscriptionManager,
     val podcastManager: PodcastManager,
     val userEpisodeManager: UserEpisodeManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
+    private val tracker: TracksAnalyticsTracker,
     @ApplicationScope private val applicationScope: CoroutineScope,
+    private val crashLogging: CrashLogging,
+    private val experimentProvider: ExperimentProvider,
+    private val endOfYearSync: EndOfYearSync,
 ) : UserManager, CoroutineScope {
 
     companion object {
@@ -68,7 +76,7 @@ class UserManagerImpl @Inject constructor(
                     signOut(playbackManager, wasInitiatedByUser = false)
                 }
             } catch (t: Throwable) {
-                SentryHelper.recordException("Account monitoring crash.", t)
+                crashLogging.sendReport(t, message = "Account monitoring crash.")
             }
         }
 
@@ -86,12 +94,13 @@ class UserManagerImpl @Inject constructor(
                             if (value != null) {
                                 Single.just(value)
                             } else {
-                                subscriptionManager.getSubscriptionStatus(allowCache = false)
+                                subscriptionManager.getSubscriptionStatusRxSingle(allowCache = false)
                             }
                         }
-                        .map {
+                        .combineLatest(syncManager.emailFlowable())
+                        .map { (status, maybeEmail) ->
                             analyticsTracker.refreshMetadata()
-                            SignInState.SignedIn(email = syncManager.getEmail() ?: "", subscriptionStatus = it)
+                            SignInState.SignedIn(email = maybeEmail.get() ?: "", subscriptionStatus = status)
                         }
                         .onErrorReturn {
                             Timber.e(it, "Error getting subscription state")
@@ -108,22 +117,27 @@ class UserManagerImpl @Inject constructor(
             LogBuffer.i(LogBuffer.TAG_BACKGROUND_TASKS, "Signing out")
             subscriptionManager.clearCachedStatus()
             syncManager.signOut {
-                settings.clearPlusPreferences()
                 applicationScope.launch {
+                    settings.clearPlusPreferences()
+
                     userEpisodeManager.removeCloudStatusFromFiles(playbackManager)
+
+                    settings.marketingOptIn.set(false, updateModifiedAt = false)
+
+                    analyticsTracker.track(
+                        AnalyticsEvent.USER_SIGNED_OUT,
+                        mapOf(KEY_USER_INITIATED to wasInitiatedByUser),
+                    )
+                    analyticsTracker.flush()
+                    analyticsTracker.clearAllData()
+                    analyticsTracker.refreshMetadata()
+
+                    // Force experiments to refresh after signing out with an anonymous UUID
+                    experimentProvider.refreshExperiments(tracker.anonID)
+
+                    settings.setEndOfYearShowModal(true)
+                    endOfYearSync.reset()
                 }
-
-                settings.marketingOptIn.set(false)
-                settings.marketingOptIn.needsSync = false
-                settings.setEndOfYearShowModal(true)
-
-                analyticsTracker.track(
-                    AnalyticsEvent.USER_SIGNED_OUT,
-                    mapOf(KEY_USER_INITIATED to wasInitiatedByUser),
-                )
-                analyticsTracker.flush()
-                analyticsTracker.clearAllData()
-                analyticsTracker.refreshMetadata()
             }
         }
         settings.setFullySignedOut(true)

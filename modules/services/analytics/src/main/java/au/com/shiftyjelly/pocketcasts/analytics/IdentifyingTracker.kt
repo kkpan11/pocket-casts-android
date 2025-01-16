@@ -1,6 +1,7 @@
 package au.com.shiftyjelly.pocketcasts.analytics
 
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import java.util.UUID
 import timber.log.Timber
 
@@ -16,7 +17,6 @@ abstract class IdentifyingTracker(
 
     abstract override fun flush()
     override fun clearAllData() {
-        clearAnonID()
         userId = null
     }
 
@@ -29,7 +29,7 @@ abstract class IdentifyingTracker(
         }
     }
 
-    protected val anonID: String?
+    val anonID: String?
         get() {
             if (anonymousID == null) {
                 anonymousID = preferences.getString(anonIdPrefKey, null)
@@ -37,12 +37,12 @@ abstract class IdentifyingTracker(
             return anonymousID
         }
 
-    protected fun generateNewAnonID(): String {
+    internal fun generateNewAnonID(): String {
         val uuid = UUID.randomUUID().toString().replace("-", "")
         Timber.d("\uD83D\uDD35 New anonID generated in " + this.javaClass.simpleName + ": " + uuid)
-        val editor = preferences.edit()
-        editor.putString(anonIdPrefKey, uuid)
-        editor.apply()
+        preferences.edit {
+            putString(anonIdPrefKey, uuid)
+        }
         anonymousID = uuid
         return uuid
     }

@@ -1,12 +1,13 @@
 package au.com.shiftyjelly.pocketcasts.analytics
 
 import au.com.shiftyjelly.pocketcasts.models.entity.BaseEpisode
+import au.com.shiftyjelly.pocketcasts.models.entity.EpisodeDownloadFailureStatistics
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class EpisodeAnalytics @Inject constructor(
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
 ) {
     private val downloadEpisodeUuidQueue = mutableListOf<String>()
     private val uploadEpisodeUuidQueue = mutableListOf<String>()
@@ -20,7 +21,7 @@ class EpisodeAnalytics @Inject constructor(
         analyticsTracker.track(event, AnalyticsProp.sourceAndUuidMap(source, uuid))
     }
 
-    fun trackEvent(event: AnalyticsEvent, uuid: String) {
+    fun trackEvent(event: AnalyticsEvent, uuid: String, source: SourceView? = null) {
         if (event == AnalyticsEvent.EPISODE_DOWNLOAD_FINISHED || event == AnalyticsEvent.EPISODE_DOWNLOAD_FAILED) {
             if (downloadEpisodeUuidQueue.contains(uuid)) {
                 downloadEpisodeUuidQueue.remove(uuid)
@@ -35,7 +36,11 @@ class EpisodeAnalytics @Inject constructor(
             }
         }
 
-        analyticsTracker.track(event, AnalyticsProp.uuidMap(uuid))
+        if (source != null) {
+            analyticsTracker.track(event, AnalyticsProp.sourceAndUuidMap(source, uuid))
+        } else {
+            analyticsTracker.track(event, AnalyticsProp.uuidMap(uuid))
+        }
     }
 
     fun trackEvent(
@@ -69,6 +74,24 @@ class EpisodeAnalytics @Inject constructor(
         toTop: Boolean,
     ) {
         analyticsTracker.track(event, AnalyticsProp.bulkToTopMap(source, count, toTop))
+    }
+
+    fun trackEpisodeDownloadFailure(error: EpisodeDownloadError) {
+        if (downloadEpisodeUuidQueue.contains(error.episodeUuid)) {
+            downloadEpisodeUuidQueue.remove(error.episodeUuid)
+        } else {
+            return
+        }
+        analyticsTracker.track(AnalyticsEvent.EPISODE_DOWNLOAD_FAILED, error.toProperties())
+    }
+
+    fun trackStaleEpisodeDownloads(data: EpisodeDownloadFailureStatistics) {
+        val properties = buildMap {
+            put("failed_download_count", data.count)
+            data.newestTimestamp?.let { put("newest_failed_download", it.toString()) }
+            data.oldestTimestamp?.let { put("oldest_failed_download", it.toString()) }
+        }
+        analyticsTracker.track(AnalyticsEvent.EPISODE_DOWNLOAD_STALE, properties)
     }
 
     private object AnalyticsProp {
