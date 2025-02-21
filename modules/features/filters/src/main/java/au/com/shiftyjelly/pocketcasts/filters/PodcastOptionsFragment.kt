@@ -8,6 +8,9 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.fragment.app.commit
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.filters.databinding.PodcastOptionsFragmentBinding
 import au.com.shiftyjelly.pocketcasts.models.entity.Playlist
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PlaylistManager
@@ -54,6 +57,8 @@ class PodcastOptionsFragment : BaseFragment(), PodcastSelectFragment.Listener, C
 
     @Inject lateinit var playlistManager: PlaylistManager
 
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
+
     var podcastSelection: List<String> = listOf()
     var playlist: Playlist? = null
     private var binding: PodcastOptionsFragmentBinding? = null
@@ -79,7 +84,7 @@ class PodcastOptionsFragment : BaseFragment(), PodcastSelectFragment.Listener, C
         val btnClose = binding.btnClose
 
         launch {
-            val subscribedPodcasts = withContext(Dispatchers.Default) { podcastManager.findSubscribed() }.map { it.uuid }
+            val subscribedPodcasts = withContext(Dispatchers.Default) { podcastManager.findSubscribedBlocking() }.map { it.uuid }
             val playlistUuid = requireArguments().getString(ARG_PLAYLIST_UUID) ?: return@launch
             val playlist = playlistManager.findByUuid(playlistUuid) ?: return@launch
             this@PodcastOptionsFragment.playlist = playlist
@@ -99,6 +104,7 @@ class PodcastOptionsFragment : BaseFragment(), PodcastSelectFragment.Listener, C
             }
 
             switchAllPodcasts.setOnCheckedChangeListener { _, isChecked ->
+                analyticsTracker.track(AnalyticsEvent.SETTINGS_SELECT_PODCASTS_SELECT_ALL_PODCASTS_TOGGLED, mapOf("source" to SourceView.FILTERS.analyticsValue, "enabled" to isChecked))
                 podcastSelectDisabled.isVisible = isChecked
                 if (!isChecked) {
                     podcastSelection = emptyList()
@@ -141,7 +147,7 @@ class PodcastOptionsFragment : BaseFragment(), PodcastSelectFragment.Listener, C
                     } else {
                         null
                     }
-                    playlistManager.update(playlist, userPlaylistUpdate)
+                    playlistManager.updateBlocking(playlist, userPlaylistUpdate)
 
                     launch(Dispatchers.Main) { (activity as? FragmentHostListener)?.closeModal(this@PodcastOptionsFragment) }
                 }

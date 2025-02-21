@@ -2,12 +2,13 @@ package au.com.shiftyjelly.pocketcasts.views.multiselect
 
 import android.content.res.Resources
 import android.widget.Toast
+import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.map
 import androidx.lifecycle.toLiveData
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.EpisodeAnalytics
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.localization.extensions.getStringPlural
@@ -25,11 +26,11 @@ import au.com.shiftyjelly.pocketcasts.utils.combineLatest
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
 import au.com.shiftyjelly.pocketcasts.views.R
 import au.com.shiftyjelly.pocketcasts.views.dialog.ConfirmationDialog
-import au.com.shiftyjelly.pocketcasts.views.dialog.ShareDialog
+import au.com.shiftyjelly.pocketcasts.views.dialog.ShareDialogFactory
 import au.com.shiftyjelly.pocketcasts.views.helper.CloudDeleteHelper
 import au.com.shiftyjelly.pocketcasts.views.helper.DeleteState
+import com.automattic.android.tracks.crashlogging.CrashLogging
 import io.reactivex.BackpressureStrategy
-import io.sentry.Sentry
 import javax.inject.Inject
 import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
@@ -48,10 +49,12 @@ class MultiSelectEpisodesHelper @Inject constructor(
     val podcastManager: PodcastManager,
     val playbackManager: PlaybackManager,
     val downloadManager: DownloadManager,
-    val analyticsTracker: AnalyticsTrackerWrapper,
+    val analyticsTracker: AnalyticsTracker,
     val settings: Settings,
     private val episodeAnalytics: EpisodeAnalytics,
     @ApplicationScope private val applicationScope: CoroutineScope,
+    private val crashLogging: CrashLogging,
+    private val shareDialogFactory: ShareDialogFactory,
 ) : MultiSelectHelper<BaseEpisode>() {
     override val maxToolbarIcons = 4
 
@@ -61,7 +64,7 @@ class MultiSelectEpisodesHelper @Inject constructor(
         .toLiveData()
         .combineLatest(_selectedListLive)
         .map { (actions, selectedEpisodes) ->
-            Sentry.addBreadcrumb("MultiSelectEpisodesHelper toolbarActions updated (${actions.size}): ${actions.map { it::class.java.simpleName }}, ${selectedEpisodes.size} selectedEpisodes from $source")
+            crashLogging.recordEvent("MultiSelectEpisodesHelper toolbarActions updated (${actions.size}): ${actions.map { it::class.java.simpleName }}, ${selectedEpisodes.size} selectedEpisodes from $source")
             actions.mapNotNull {
                 MultiSelectEpisodeAction.actionForGroup(it.groupId, selectedEpisodes)
             }
@@ -70,7 +73,8 @@ class MultiSelectEpisodesHelper @Inject constructor(
     override fun isSelected(multiSelectable: BaseEpisode) =
         selectedList.count { it.uuid == multiSelectable.uuid } > 0
 
-    override fun onMenuItemSelected(itemId: Int, resources: Resources, fragmentManager: FragmentManager): Boolean {
+    override fun onMenuItemSelected(itemId: Int, resources: Resources, activity: FragmentActivity): Boolean {
+        val fragmentManager = activity.supportFragmentManager
         return when (itemId) {
             R.id.menu_archive -> {
                 archive(resources = resources, fragmentManager = fragmentManager)
@@ -138,6 +142,10 @@ class MultiSelectEpisodesHelper @Inject constructor(
             }
             UR.id.menu_unstar -> {
                 unstar(resources = resources)
+                true
+            }
+            UR.id.menu_remove_listening_history -> {
+                removeListeningHistory(resources = resources)
                 true
             }
             else -> false
@@ -231,7 +239,7 @@ class MultiSelectEpisodesHelper @Inject constructor(
         launch {
             val list = selectedList.filterIsInstance<PodcastEpisode>().toList()
 
-            episodeManager.unarchiveAllInList(episodes = list)
+            episodeManager.unarchiveAllInListBlocking(episodes = list)
             episodeAnalytics.trackBulkEvent(AnalyticsEvent.EPISODE_BULK_UNARCHIVED, source, list.size)
             withContext(Dispatchers.Main) {
                 val snackText = resources.getStringPlural(selectedList.size, LR.string.unarchived_episodes_singular, LR.string.unarchived_episodes_plural)
@@ -277,6 +285,24 @@ class MultiSelectEpisodesHelper @Inject constructor(
         }
     }
 
+    private fun removeListeningHistory(resources: Resources) {
+        if (selectedList.isEmpty()) {
+            closeMultiSelect()
+            return
+        }
+
+        launch {
+            val list = selectedList.filterIsInstance<PodcastEpisode>().toList()
+            episodeManager.clearEpisodeHistory(list)
+            episodeAnalytics.trackBulkEvent(AnalyticsEvent.EPISODE_REMOVED_LISTENING_HISTORY, source, list.size)
+            withContext(Dispatchers.Main) {
+                val snackText = resources.getStringPlural(selectedList.size, LR.string.remove_listening_history_episodes_singular, LR.string.remove_listening_history_episodes_plural)
+                showSnackBar(snackText)
+                closeMultiSelect()
+            }
+        }
+    }
+
     fun playedWarning(count: Int, resources: Resources, fragmentManager: FragmentManager) {
         val buttonString = resources.getStringPlural(count = count, singular = LR.string.mark_as_played_singular, plural = LR.string.mark_as_played_plural)
 
@@ -310,7 +336,7 @@ class MultiSelectEpisodesHelper @Inject constructor(
         val trimmedList = list.subList(0, min(Settings.MAX_DOWNLOAD, selectedList.count())).toList()
         ConfirmationDialog.downloadWarningDialog(list.count(), resources) {
             trimmedList.forEach {
-                downloadManager.addEpisodeToQueue(it, "podcast download all", false)
+                downloadManager.addEpisodeToQueue(it, "podcast download all", fireEvent = false, source = source)
             }
             episodeAnalytics.trackBulkEvent(AnalyticsEvent.EPISODE_BULK_DOWNLOAD_QUEUED, source, trimmedList)
             val snackText = resources.getStringPlural(trimmedList.size, LR.string.download_queued_singular, LR.string.download_queued_plural)
@@ -429,19 +455,14 @@ class MultiSelectEpisodesHelper @Inject constructor(
         }
 
         launch {
-            val podcast = podcastManager.findPodcastByUuidSuspend(episode.podcastUuid) ?: run {
+            val podcast = podcastManager.findPodcastByUuid(episode.podcastUuid) ?: run {
                 LogBuffer.e(LogBuffer.TAG_INVALID_STATE, "Share failed because unable to find podcast from uuid")
                 return@launch
             }
 
-            ShareDialog(
-                episode = episode,
-                podcast = podcast,
-                fragmentManager = fragmentManager,
-                context = context,
-                shouldShowPodcast = false,
-                analyticsTracker = analyticsTracker,
-            ).show(sourceView = SourceView.MULTI_SELECT)
+            shareDialogFactory
+                .shareEpisode(podcast, episode, SourceView.MULTI_SELECT)
+                .show(fragmentManager, "share_dialog")
         }
 
         closeMultiSelect()
@@ -455,7 +476,7 @@ class MultiSelectEpisodesHelper @Inject constructor(
             }
 
             withContext(Dispatchers.Main) {
-                val snackText = resources.getStringPlural(selectedList.size, LR.string.removed_from_up_next_singular, LR.string.removed_from_up_next_plural)
+                val snackText = resources.getStringPlural(list.size, LR.string.removed_from_up_next_singular, LR.string.removed_from_up_next_plural)
                 showSnackBar(snackText)
             }
         }

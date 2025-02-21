@@ -4,7 +4,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.to.SignInState
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.user.UserManager
@@ -13,7 +14,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CloudSettingsViewModel @Inject constructor(
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     private val settings: Settings,
     userManager: UserManager,
 ) : ViewModel() {
@@ -33,7 +34,7 @@ class CloudSettingsViewModel @Inject constructor(
     }
 
     fun setAddToUpNext(enabled: Boolean) {
-        settings.cloudAddToUpNext.set(enabled)
+        settings.cloudAddToUpNext.set(enabled, updateModifiedAt = true)
         analyticsTracker.track(
             AnalyticsEvent.SETTINGS_FILES_AUTO_ADD_UP_NEXT_TOGGLED,
             mapOf("enabled" to enabled),
@@ -41,7 +42,7 @@ class CloudSettingsViewModel @Inject constructor(
     }
 
     fun setDeleteLocalFileAfterPlaying(enabled: Boolean) {
-        settings.deleteLocalFileAfterPlaying.set(enabled)
+        settings.deleteLocalFileAfterPlaying.set(enabled, updateModifiedAt = true)
         analyticsTracker.track(
             AnalyticsEvent.SETTINGS_FILES_DELETE_LOCAL_FILE_AFTER_PLAYING_TOGGLED,
             mapOf("enabled" to enabled),
@@ -49,7 +50,7 @@ class CloudSettingsViewModel @Inject constructor(
     }
 
     fun setDeleteCloudFileAfterPlaying(enabled: Boolean) {
-        settings.deleteCloudFileAfterPlaying.set(enabled)
+        settings.deleteCloudFileAfterPlaying.set(enabled, updateModifiedAt = true)
         analyticsTracker.track(
             AnalyticsEvent.SETTINGS_FILES_DELETE_CLOUD_FILE_AFTER_PLAYING_TOGGLED,
             mapOf("enabled" to enabled),
@@ -57,7 +58,7 @@ class CloudSettingsViewModel @Inject constructor(
     }
 
     fun setCloudAutoUpload(enabled: Boolean) {
-        settings.cloudAutoUpload.set(enabled)
+        settings.cloudAutoUpload.set(enabled, updateModifiedAt = true)
         analyticsTracker.track(
             AnalyticsEvent.SETTINGS_FILES_AUTO_UPLOAD_TO_CLOUD_TOGGLED,
             mapOf("enabled" to enabled),
@@ -65,7 +66,7 @@ class CloudSettingsViewModel @Inject constructor(
     }
 
     fun setCloudAutoDownload(enabled: Boolean) {
-        settings.cloudAutoDownload.set(enabled)
+        settings.cloudAutoDownload.set(enabled, updateModifiedAt = true)
         analyticsTracker.track(
             AnalyticsEvent.SETTINGS_FILES_AUTO_DOWNLOAD_FROM_CLOUD_TOGGLED,
             mapOf("enabled" to enabled),
@@ -73,10 +74,14 @@ class CloudSettingsViewModel @Inject constructor(
     }
 
     fun setCloudOnlyWifi(enabled: Boolean) {
-        settings.cloudDownloadOnlyOnWifi.set(enabled)
+        settings.cloudDownloadOnlyOnWifi.set(enabled, updateModifiedAt = true)
         analyticsTracker.track(
             AnalyticsEvent.SETTINGS_FILES_ONLY_ON_WIFI_TOGGLED,
             mapOf("enabled" to enabled),
         )
+    }
+
+    fun onUpgradeBannerDismissed(source: SourceView) {
+        analyticsTracker.track(AnalyticsEvent.UPGRADE_BANNER_DISMISSED, mapOf("source" to source.analyticsValue))
     }
 }

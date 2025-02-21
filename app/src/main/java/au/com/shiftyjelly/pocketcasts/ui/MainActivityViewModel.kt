@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.models.entity.UserEpisode
@@ -22,12 +22,8 @@ import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.user.UserManager
 import au.com.shiftyjelly.pocketcasts.settings.whatsnew.WhatsNewFragment
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.EarlyAccessState
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlagWrapper
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureTier
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureWrapper
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.ReleaseVersion.Companion.comparedToEarlyPatronAccess
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.ReleaseVersionWrapper
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import au.com.shiftyjelly.pocketcasts.views.multiselect.MultiSelectBookmarksHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.reactivex.BackpressureStrategy
@@ -39,6 +35,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.reactive.asFlow
+import kotlinx.coroutines.reactive.collect
 import timber.log.Timber
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
@@ -54,13 +52,13 @@ class MainActivityViewModel
     private val podcastManager: PodcastManager,
     private val bookmarkManager: BookmarkManager,
     private val theme: Theme,
-    private val feature: FeatureWrapper,
-    private val featureFlag: FeatureFlagWrapper,
-    private val releaseVersion: ReleaseVersionWrapper,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
 ) : ViewModel() {
     private val _state = MutableStateFlow(State())
     val state = _state.asStateFlow()
+
+    private val _downloadedEpisodeState = MutableStateFlow(DownloadedEpisodesState())
+    val downloadedEpisodeState = _downloadedEpisodeState.asStateFlow()
 
     private val _snackbarMessage = MutableSharedFlow<Int>()
     val snackbarMessage = _snackbarMessage.asSharedFlow()
@@ -80,27 +78,20 @@ class MainActivityViewModel
                 updateStoriesModalShowState(settings.getEndOfYearShowModal())
             }
         }
+
+        viewModelScope.launch {
+            episodeManager.findDownloadedEpisodesRxFlowable()
+                .collect { result ->
+                    _downloadedEpisodeState.update { state -> state.copy(downloadedEpisodes = result.sumOf { it.sizeInBytes }) }
+                }
+        }
     }
 
     private fun showWhatsNewIfNeeded() {
         val lastSeenVersionCode = settings.getWhatsNewVersionCode()
         val migratedVersion = settings.getMigratedVersionCode()
         if (migratedVersion != 0) { // We don't want to show this to new users, there is a race condition between this and the version migration
-            var whatsNewShouldBeShown = WhatsNewFragment.isWhatsNewNewerThan(lastSeenVersionCode)
-            val isBookmarksEnabled = featureFlag.isEnabled(feature.bookmarksFeature)
-            if (isBookmarksEnabled) {
-                val isUserEntitled = feature.isUserEntitled(feature.bookmarksFeature, settings.userTier)
-
-                val patronExclusiveAccessRelease = (feature.bookmarksFeature.tier as? FeatureTier.Plus)?.patronExclusiveAccessRelease
-                val relativeToEarlyPatronAccess = patronExclusiveAccessRelease?.let {
-                    releaseVersion.currentReleaseVersion.comparedToEarlyPatronAccess(it)
-                }
-                val shouldShowWhatsNewWhenUserNotEntitled = patronExclusiveAccessRelease == null ||
-                    relativeToEarlyPatronAccess == EarlyAccessState.After
-
-                whatsNewShouldBeShown = whatsNewShouldBeShown &&
-                    (isUserEntitled || shouldShowWhatsNewWhenUserNotEntitled)
-            }
+            val whatsNewShouldBeShown = WhatsNewFragment.isWhatsNewNewerThan(lastSeenVersionCode) && FeatureFlag.isEnabled(Feature.REIMAGINE_SHARING)
             _state.update { state -> state.copy(shouldShowWhatsNew = whatsNewShouldBeShown) }
         }
     }
@@ -115,7 +106,7 @@ class MainActivityViewModel
             Timber.d("Updated playback state from ${it.lastChangeFrom} is playing ${it.isPlaying}")
         }
         .toFlowable(BackpressureStrategy.LATEST)
-    val playbackState = playbackStateRx.toLiveData()
+    val playbackState = playbackStateRx.asFlow()
 
     val signInState: LiveData<SignInState> = userManager.getSignInState().toLiveData()
     val isSignedIn: Boolean
@@ -126,7 +117,7 @@ class MainActivityViewModel
         val renewing = subscriptionStatus.autoRenew
         val cancelAcknowledged = settings.getCancelledAcknowledged()
         val giftDays = paidStatus.giftDays
-        val expired = paidStatus.expiry.before(Date())
+        val expired = paidStatus.expiryDate.before(Date())
 
         return !renewing && !cancelAcknowledged && giftDays == 0 && expired
     }
@@ -135,7 +126,7 @@ class MainActivityViewModel
         return signInState.isExpiredTrial && !settings.getTrialFinishedSeen()
     }
 
-    suspend fun isEndOfYearStoriesEligible() = endOfYearManager.isEligibleForStories()
+    suspend fun isEndOfYearStoriesEligible() = endOfYearManager.isEligibleForEndOfYear()
     fun updateStoriesModalShowState(show: Boolean) {
         viewModelScope.launch {
             shouldShowStoriesModal.value = show &&
@@ -161,7 +152,7 @@ class MainActivityViewModel
             val timeInSecs = bookmark?.timeSecs ?: currentEpisode?.let { playbackManager.getCurrentTimeMs(currentEpisode) / 1000 } ?: 0
 
             val podcast =
-                bookmark?.let { podcastManager.findPodcastByUuidSuspend(bookmark.podcastUuid) }
+                bookmark?.let { podcastManager.findPodcastByUuid(bookmark.podcastUuid) }
             val backgroundColor =
                 if (podcast == null) 0xFF000000.toInt() else theme.playerBackgroundColor(podcast)
             val tintColor =
@@ -218,6 +209,10 @@ class MainActivityViewModel
 
     data class State(
         val shouldShowWhatsNew: Boolean = false,
+    )
+
+    data class DownloadedEpisodesState(
+        val downloadedEpisodes: Long = 0L,
     )
 
     sealed class NavigationState {

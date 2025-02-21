@@ -46,14 +46,12 @@
         <attr name="plus_logo" format="reference" />
         <attr name="logo_title_horizontal" format="reference" />
         <attr name="logo_title_vertical" format="reference" />
-        <attr name="about_logo_wordpress" format="reference" />
         <attr name="about_logo_jetpack" format="reference" />
         <attr name="about_logo_dayone" format="reference" />
         <attr name="about_logo_pocketcasts" format="reference" />
         <attr name="about_logo_woo" format="reference" />
         <attr name="about_logo_simplenote" format="reference" />
         <attr name="about_logo_tumblr" format="reference" />
-        <attr name="about_logo_wordpress_color" format="color" />
         <attr name="about_logo_jetpack_color" format="color" />
         <attr name="about_logo_dayone_color" format="color" />
         <attr name="about_logo_pocketcasts_color" format="color" />
@@ -192,14 +190,13 @@
     <color name="colorMessageStrokeLight">#DCE1E4</color>
     <color name="colorIconMessageLight">#B8C3C9</color>
 
-    <!-- Dark status bar color in the light theme -->
-    <color name="colorStatusBarDarkInLight">#FF000000</color>
-
     <style name="ThemeBaseLight" parent="Theme.MaterialComponents.Light.NoActionBar" tools:ignore="NewApi">
         <item name="preferenceTheme">@style/AppPreferenceTheme</item>
         <item name="isDark">false</item>
         <item name="isImageTintEnabled">false</item>
         <item name="imageTintThemeCacheTag">light</item>
+        <item name="enableEdgeToEdge">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
 
         <item name="toolbarTheme">@style/LightToolbarTheme</item>
 
@@ -372,14 +369,12 @@
         <item name="plus_logo">@drawable/plus_logo_horizontal_light</item>
         <item name="logo_title_horizontal">@drawable/ic_logo_title_hor_dark</item>
         <item name="logo_title_vertical">@drawable/ic_logo_title_ver_light</item>
-        <item name="about_logo_wordpress">@drawable/about_logo_wordpress</item>
         <item name="about_logo_jetpack">@drawable/about_logo_jetpack</item>
         <item name="about_logo_dayone">@drawable/about_logo_dayone</item>
         <item name="about_logo_pocketcasts">@drawable/about_logo_pocketcasts</item>
         <item name="about_logo_woo">@drawable/about_logo_woo</item>
         <item name="about_logo_simplenote">@drawable/about_logo_simplenote</item>
         <item name="about_logo_tumblr">@drawable/about_logo_tumblr</item>
-        <item name="about_logo_wordpress_color">#280675C4</item>
         <item name="about_logo_jetpack_color">#2800BE28</item>
         <item name="about_logo_dayone_color">#2844C0FF</item>
         <item name="about_logo_pocketcasts_color">#28F43E37</item>
@@ -390,10 +385,7 @@
 
     <style name="ThemeLight" parent="ThemeBaseLight" tools:ignore="NewApi">
         <!-- For older APIs, leave the status bar as black, always since the APIs to tint the icons don't exist -->
-        <item name="android:navigationBarColor">@color/black</item>
-
-        <!-- Only 23 and above support having a light status bar using windowLightStatusBar. There are other hacks, but too hard so just black for 21,22 -->
-        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:statusBarColor">@color/white</item>
     </style>
 
     <style name="LightToolbarTheme" parent="ThemeOverlay.AppCompat.Light"></style>
@@ -416,6 +408,8 @@
         <item name="isDark">true</item>
         <item name="isImageTintEnabled">false</item>
         <item name="imageTintThemeCacheTag">dark</item>
+        <item name="enableEdgeToEdge">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
 
         <!-- Default colours -->
         <item name="colorSearchBox">@color/searchBoxDark</item>
@@ -587,25 +581,22 @@
         <item name="plus_logo">@drawable/plus_logo_horizontal_dark</item>
         <item name="logo_title_horizontal">@drawable/ic_logo_title_hor_light</item>
         <item name="logo_title_vertical">@drawable/ic_logo_title_ver_dark</item>
-        <item name="about_logo_wordpress">@drawable/about_logo_wordpress</item>
         <item name="about_logo_jetpack">@drawable/about_logo_jetpack</item>
         <item name="about_logo_dayone">@drawable/about_logo_dayone</item>
         <item name="about_logo_pocketcasts">@drawable/about_logo_pocketcasts</item>
         <item name="about_logo_woo">@drawable/about_logo_woo</item>
         <item name="about_logo_simplenote">@drawable/about_logo_simplenote</item>
         <item name="about_logo_tumblr">@drawable/about_logo_tumblr_dark</item>
-        <item name="about_logo_wordpress_color">#280675C4</item>
         <item name="about_logo_jetpack_color">#2800BE28</item>
         <item name="about_logo_dayone_color">#2844C0FF</item>
         <item name="about_logo_pocketcasts_color">#28F43E37</item>
-        <item name="about_logo_woo_color">#287D57A4</item>
+        <item name="about_logo_woo_color">#28B999FF</item>
         <item name="about_logo_simplenote_color">#283361CC</item>
         <item name="about_logo_tumblr_color">#28FFFFFF</item>
     </style>
 
     <style name="ThemeDark" parent="ThemeBaseDark">
         <!-- For older APIs, leave the status bar as black, always since the APIs to tint the icons don't exist -->
-        <item name="android:navigationBarColor">?attr/primary_ui_03</item>
         <item name="android:statusBarColor">@color/black</item>
     </style>
 
@@ -731,6 +722,7 @@
 
     <style name="BaseClassicLight" parent="ThemeBaseLight">
         <item name="toolbarTheme">@style/ClassicLight.Toolbar</item>
+        <item name="android:statusBarColor">@color/black</item>
 
         <!-- Classic light theme tokens - WARNING AUTO GENERATED, DO NOT EDIT - begin ************ -->
         <item name="primary_ui_01">#FFFFFF</item>
@@ -852,9 +844,6 @@
     </style>
 
     <style name="ClassicLight" parent="BaseClassicLight" tools:ignore="NewApi">
-        <!-- For older APIs, leave the status bar as black, always since the APIs to tint the icons don't exist -->
-        <item name="android:navigationBarColor">@color/black</item>
-
         <!-- Only 23 and above support having a light status bar using windowLightStatusBar. There are other hacks, but too hard so just black for 21,22 -->
         <item name="android:statusBarColor">@color/black</item>
     </style>
@@ -1674,11 +1663,6 @@
         <item name="android:windowExitAnimation">@android:anim/fade_out</item>
     </style>
 
-    <style name="WindowAnimationSlideTransition">
-        <item name="android:windowEnterAnimation">@anim/slide_in_up</item>
-        <item name="android:windowExitAnimation">@anim/slide_out_down</item>
-    </style>
-
     <!-- Android Auto themes -->
     <style name="CarTheme" parent="ThemeDark">
         <item name="android:colorAccent">@color/pocketcastsreddark</item>
@@ -1878,6 +1862,22 @@
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:statusBarColor">@android:color/transparent</item>x
         <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="LightPopupTheme" parent="ThemeOverlay.AppCompat.Light">
+        <item name="android:backgroundTint">@android:color/white</item>
+        <item name="android:elevation">0dp</item>
+    </style>
+
+    <!-- Clip sharing theme to enable content resisign -->
+    <style name="Theme.ClipSharing" parent="Theme.Design.BottomSheetDialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="bottomSheetStyle">@style/Widget.BottomSheet.ClipSharing</item>
+    </style>
+
+    <style name="Widget.BottomSheet.ClipSharing" parent="Widget.Design.BottomSheet.Modal">
+        <item name="android:background">@drawable/bg_bottom_sheet_dialog_fragment_dark</item>
     </style>
 
 </resources>

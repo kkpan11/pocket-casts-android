@@ -5,7 +5,7 @@ import android.content.res.Resources
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.entity.Folder
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.to.PodcastFolder
@@ -39,7 +39,7 @@ class FolderEditViewModel
     private val podcastManager: PodcastManager,
     private val folderManager: FolderManager,
     private val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
 ) : ViewModel(), CoroutineScope {
 
     data class State(
@@ -91,9 +91,9 @@ class FolderEditViewModel
                     .toFlowable(BackpressureStrategy.LATEST)
                     .switchMap { podcastSortOrder ->
                         if (podcastSortOrder == PodcastsSortType.EPISODE_DATE_NEWEST_TO_OLDEST) {
-                            podcastManager.observePodcastsOrderByLatestEpisode()
+                            podcastManager.podcastsOrderByLatestEpisodeRxFlowable()
                         } else {
-                            podcastManager.observeSubscribed()
+                            podcastManager.subscribedRxFlowable()
                         }
                     }
                     .asFlow<List<Podcast>>(),
@@ -151,7 +151,7 @@ class FolderEditViewModel
         val podcasts = podcastsSortedByReleaseDate
         return when (settings.podcastsSortType.value) {
             PodcastsSortType.EPISODE_DATE_NEWEST_TO_OLDEST -> podcastsSortedByReleaseDate
-            PodcastsSortType.DATE_ADDED_OLDEST_TO_NEWEST -> podcasts.sortedWith(compareBy { it.addedDate })
+            PodcastsSortType.DATE_ADDED_NEWEST_TO_OLDEST -> podcasts.sortedWith(compareBy { it.addedDate })
             PodcastsSortType.DRAG_DROP -> podcasts.sortedWith(compareBy { it.sortPosition })
             PodcastsSortType.NAME_A_TO_Z -> podcasts.sortedWith(compareBy { PodcastsSortType.cleanStringForSort(it.title) })
         }
@@ -288,7 +288,7 @@ class FolderEditViewModel
 
     fun loadFolderForPodcast(podcastUuid: String) {
         viewModelScope.launch {
-            folderUuid.value = Optional.ofNullable(podcastManager.findPodcastByUuidSuspend(podcastUuid)?.folderUuid)
+            folderUuid.value = Optional.ofNullable(podcastManager.findPodcastByUuid(podcastUuid)?.folderUuid)
         }
     }
 
@@ -312,6 +312,10 @@ class FolderEditViewModel
         if (state.value.isEditFolder) {
             analyticsTracker.track(AnalyticsEvent.FOLDER_CHOOSE_PODCASTS_DISMISSED, mapOf(CHANGED_PODCASTS_KEY to state.value.selectedCount))
         }
+    }
+
+    fun trackShown(source: String) {
+        analyticsTracker.track(AnalyticsEvent.FOLDER_CREATE_SHOWN, mapOf("source" to source))
     }
 
     companion object {

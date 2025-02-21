@@ -7,6 +7,7 @@ import au.com.shiftyjelly.pocketcasts.localization.extensions.getStringPluralMin
 import au.com.shiftyjelly.pocketcasts.localization.extensions.getStringPluralMinutes
 import au.com.shiftyjelly.pocketcasts.localization.extensions.getStringPluralSeconds
 import au.com.shiftyjelly.pocketcasts.localization.extensions.getStringPluralSecs
+import kotlin.time.Duration
 
 object TimeHelper {
 
@@ -35,6 +36,17 @@ object TimeHelper {
             output = context.getString(R.string.time_short_seconds, secs) // "${secs}s"
         }
         return output.ifEmpty { emptyString }
+    }
+
+    /**
+     * Displays the duration with the long units such as minutes shortened to mins.
+     * For example: 6 hours
+     * 1 hours 12 mins
+     * 45 mins
+     * 45 secs
+     */
+    fun getTimeDurationMediumString(time: Duration, context: Context?, emptyString: String = "-"): String {
+        return getTimeDurationMediumString(time.inWholeMilliseconds.toInt(), context, emptyString)
     }
 
     /**
@@ -97,6 +109,10 @@ object TimeHelper {
         return if (output.isEmpty()) emptyString else output
     }
 
+    fun getTimeLeft(currentTimeMs: Int, durationMs: Int, inProgress: Boolean, context: Context): TimeLeft {
+        return getTimeLeft(currentTimeMs, durationMs.toLong(), inProgress, context)
+    }
+
     fun getTimeLeft(currentTimeMs: Int, durationMs: Long, inProgress: Boolean, context: Context): TimeLeft {
         if (durationMs == 0L) {
             return TimeLeft(text = "-", description = "")
@@ -112,25 +128,6 @@ object TimeHelper {
             text = context.getString(R.string.time_left, getTimeDurationShortString(remaining, context, emptyString = "0")),
             description = context.getString(R.string.time_left, getTimeDurationString(remaining, context, emptyString = "0")),
         )
-    }
-
-    /**
-     * Milliseconds to string e.g. 11:43 or 2:18:90
-     */
-    fun getTimeLeftOnlyNumbers(currentTimeMs: Int, durationMs: Int): String {
-        val timeLeftMs: Int = when {
-            durationMs <= 0 -> 0
-            currentTimeMs <= 0 -> durationMs
-            else -> durationMs - currentTimeMs
-        }
-        return if (timeLeftMs <= 0) formattedMs(0) else "-${formattedMs(timeLeftMs)}"
-    }
-
-    /**
-     * Milliseconds to string e.g. 11:43 or 2:18:90
-     */
-    fun formattedMs(ms: Int): String {
-        return formattedSeconds(ms.toDouble() / 1000.0)
     }
 
     fun formattedSeconds(seconds: Double, hoursFormat: String = "%d:%02d:%02d", noHoursFormat: String = "%02d:%02d"): String {

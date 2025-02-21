@@ -1,23 +1,25 @@
 package au.com.shiftyjelly.pocketcasts.account.onboarding.import
 
+import androidx.activity.SystemBarStyle
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
@@ -27,15 +29,16 @@ import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
+import au.com.shiftyjelly.pocketcasts.compose.bars.SystemBarsStyles
 import au.com.shiftyjelly.pocketcasts.compose.bars.ThemedTopAppBar
+import au.com.shiftyjelly.pocketcasts.compose.bars.singleAuto
+import au.com.shiftyjelly.pocketcasts.compose.bars.transparent
 import au.com.shiftyjelly.pocketcasts.compose.buttons.RowButton
 import au.com.shiftyjelly.pocketcasts.compose.components.TextH10
 import au.com.shiftyjelly.pocketcasts.compose.components.TextP40
 import au.com.shiftyjelly.pocketcasts.compose.preview.ThemePreviewParameterProvider
 import au.com.shiftyjelly.pocketcasts.compose.theme
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
-import com.google.androidbrowserhelper.trusted.Utils.setStatusBarColor
 import au.com.shiftyjelly.pocketcasts.images.R as IR
 
 @Composable
@@ -48,20 +51,21 @@ fun OnboardingImportFrom(
     buttonText: String? = null,
     buttonClick: (() -> Unit)? = null,
     onBackPressed: () -> Unit,
+    onUpdateSystemBars: (SystemBarsStyles) -> Unit,
 ) {
-    rememberSystemUiController().apply {
-        // Use the secondaryUI01 so the status bar matches the ThemedTopAppBar
-        setStatusBarColor(MaterialTheme.theme.colors.secondaryUi01, darkIcons = !theme.defaultLightIcons)
-        setNavigationBarColor(Color.Transparent, darkIcons = !theme.darkTheme)
-    }
+    val pocketCastsTheme = MaterialTheme.theme
+    // Use secondaryUI01 so the status bar matches the ThemedTopAppBar
+    val statusBar = SystemBarStyle.singleAuto(pocketCastsTheme.colors.secondaryUi01) { theme.darkTheme }
+    val navigationBar = SystemBarStyle.transparent { theme.darkTheme }
+    onUpdateSystemBars(SystemBarsStyles(statusBar, navigationBar))
 
     Column(
-        Modifier
-            .fillMaxHeight(),
+        modifier = Modifier
+            .fillMaxHeight()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
     ) {
         ThemedTopAppBar(
             onNavigationClick = onBackPressed,
-            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
         )
 
         Column(
@@ -93,7 +97,10 @@ fun OnboardingImportFrom(
                 onClick = buttonClick,
             )
         }
-        Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
+
+        Spacer(
+            modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
+        )
     }
 }
 
@@ -149,7 +156,7 @@ private fun OnboardingImportFromPreview(
     AppThemeWithBackground(themeType = themeType) {
         OnboardingImportFrom(
             theme = themeType,
-            drawableRes = IR.drawable.castbox,
+            drawableRes = IR.drawable.ic_heart,
             title = "Import from something",
             text = "Some text to go with the title.",
             steps = listOf(
@@ -160,6 +167,7 @@ private fun OnboardingImportFromPreview(
             buttonText = "A button",
             buttonClick = {},
             onBackPressed = {},
+            onUpdateSystemBars = {},
         )
     }
 }

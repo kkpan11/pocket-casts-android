@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.Checkbox
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
-import androidx.compose.material.MaterialTheme.colors
 import androidx.compose.material.Switch
 import androidx.compose.material.SwitchDefaults
 import androidx.compose.material.icons.Icons
@@ -67,7 +67,9 @@ sealed class SettingRowToggle {
 fun SettingSection(
     modifier: Modifier = Modifier,
     heading: String? = null,
+    subHeading: String? = null,
     indent: Boolean = true,
+    showDivider: Boolean = true,
     content: @Composable () -> Unit = {},
 ) {
     Column(modifier = modifier) {
@@ -75,21 +77,48 @@ fun SettingSection(
             modifier = Modifier.padding(vertical = verticalPadding),
         ) {
             if (heading != null) {
-                TextH40(
+                SettingSectionHeader(
                     text = heading,
-                    color = MaterialTheme.theme.colors.primaryInteractive01,
+                    indent = indent,
+                )
+            }
+            if (subHeading != null) {
+                TextP50(
+                    text = subHeading,
+                    style = MaterialTheme.typography.body1,
+                    color = MaterialTheme.theme.colors.primaryText02,
                     modifier = Modifier.padding(
                         start = if (indent) indentedStartPadding else horizontalPadding,
                         end = horizontalPadding,
-                        top = verticalPadding,
+                        top = if (heading == null) verticalPadding else 0.dp,
                         bottom = verticalPadding,
                     ),
                 )
             }
             content()
         }
-        HorizontalDivider()
+        if (showDivider) {
+            HorizontalDivider()
+        }
     }
+}
+
+@Composable
+fun SettingSectionHeader(
+    text: String,
+    indent: Boolean = true,
+    paddingValues: PaddingValues = PaddingValues(
+        start = if (indent) indentedStartPadding else horizontalPadding,
+        end = horizontalPadding,
+        top = verticalPadding,
+        bottom = verticalPadding,
+    ),
+) {
+    TextH40(
+        text = text,
+        color = MaterialTheme.theme.colors.primaryInteractive01,
+        modifier = Modifier.padding(paddingValues),
+    )
 }
 
 @Composable
@@ -100,6 +129,7 @@ fun <T> SettingRadioDialogRow(
     icon: Painter? = null,
     iconGradientColors: List<Color>? = null,
     options: List<T>,
+    indent: Boolean = true,
     savedOption: T,
     optionToLocalisedString: (T) -> String,
     onSave: (T) -> Unit,
@@ -111,6 +141,7 @@ fun <T> SettingRadioDialogRow(
         icon = icon,
         iconGradientColors = iconGradientColors,
         modifier = modifier.clickable { showDialog = true },
+        indent = indent,
     ) {
         if (showDialog) {
             RadioDialog(
@@ -251,6 +282,29 @@ fun SettingRow(
     }
 }
 
+@Composable
+fun SettingInfoRow(
+    text: String,
+    modifier: Modifier = Modifier,
+    indent: Boolean = true,
+) {
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = modifier
+            .padding(
+                start = if (indent) indentedStartPadding else horizontalPadding,
+                end = horizontalPadding,
+                top = verticalPadding,
+                bottom = verticalPadding,
+            ),
+    ) {
+        TextP50(
+            text = text,
+            color = MaterialTheme.theme.colors.primaryText01,
+        )
+    }
+}
+
 @Preview
 @Composable
 private fun SettingSectionPreview(
@@ -387,5 +441,16 @@ fun SettingSectionDarkPreview() {
         SettingSection(heading = "Section heading") {
             SettingRow(primaryText = "Setting row")
         }
+    }
+}
+
+@ShowkaseComposable(name = "SettingInfoRow", group = "Setting")
+@Preview(name = "Info")
+@Composable
+fun SettingInfoRowPreview() {
+    AppThemeWithBackground(Theme.ThemeType.LIGHT) {
+        SettingInfoRow(
+            text = "The quick brown fox jumps over the lazy dog",
+        )
     }
 }

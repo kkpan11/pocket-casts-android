@@ -69,7 +69,7 @@ class PlayButtonListener @Inject constructor(
     override fun onPlayedClicked(episodeUuid: String) {
         launch {
             episodeManager.findEpisodeByUuid(episodeUuid)?.let { episode ->
-                episodeManager.markAsNotPlayed(episode)
+                episodeManager.markAsNotPlayedBlocking(episode)
             }
         }
     }
@@ -110,14 +110,14 @@ class PlayButtonListener @Inject constructor(
                     } else {
                         it.autoDownloadStatus = PodcastEpisode.AUTO_DOWNLOAD_STATUS_MANUALLY_DOWNLOADED
                     }
-                    downloadManager.addEpisodeToQueue(it, "play button", true)
+                    downloadManager.addEpisodeToQueue(it, "play button", fireEvent = true, source = source)
                     episodeAnalytics.trackEvent(
                         AnalyticsEvent.EPISODE_DOWNLOAD_QUEUED,
                         source = source,
                         uuid = episodeUuid,
                     )
                     launch {
-                        episodeManager.unarchive(it)
+                        episodeManager.unarchiveBlocking(it)
                     }
                 }
             }

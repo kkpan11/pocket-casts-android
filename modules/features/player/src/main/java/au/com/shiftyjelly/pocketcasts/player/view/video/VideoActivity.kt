@@ -12,7 +12,6 @@ import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Rational
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.media.session.MediaButtonReceiver
 import au.com.shiftyjelly.pocketcasts.player.R
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
@@ -51,12 +50,6 @@ class VideoActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setTheme(Theme.ThemeType.EXTRA_DARK.resourceId)
-
-        val color = ContextCompat.getColor(this, R.color.videoButtonBackground)
-
-        window.statusBarColor = color
-        window.navigationBarColor = color
-
         setContentView(R.layout.activity_video)
 
         if (savedInstanceState == null) {
@@ -89,11 +82,11 @@ class VideoActivity : AppCompatActivity() {
         playbackManager.player?.isPip = isInPictureInPictureMode
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
 
         // Enter Picture-in-Picture
-        if (intent?.getBooleanExtra(EXTRA_PIP, false) == true) {
+        if (intent.getBooleanExtra(EXTRA_PIP, false)) {
             enterPictureInPicture()
         } else {
             playbackManager.player?.isPip = false

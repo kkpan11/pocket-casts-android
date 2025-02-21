@@ -6,8 +6,12 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import au.com.shiftyjelly.pocketcasts.models.di.ModelModule
+import au.com.shiftyjelly.pocketcasts.models.di.addTypeConverters
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodesSortType
+import au.com.shiftyjelly.pocketcasts.models.type.TrimMode
+import com.squareup.moshi.Moshi
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -29,12 +33,12 @@ class AppDatabaseTest {
         AppDatabase::class.java,
     )
 
-    private var dataOpenHelper: OldDataOpenHelper? = null
+    private var dataOpenHelper: DataOpenHelper? = null
 
     @Before
     fun setUp() {
         // Test migrations from old version of the database
-        dataOpenHelper = OldDataOpenHelper(InstrumentationRegistry.getInstrumentation().targetContext, TEST_DB).apply {
+        dataOpenHelper = DataOpenHelper(InstrumentationRegistry.getInstrumentation().targetContext, TEST_DB).apply {
             writableDatabase.use { database ->
                 dropAllTables(database)
                 dropAllIndexes(database)
@@ -69,7 +73,7 @@ class AppDatabaseTest {
         val migratedDatabase = getMigratedRoomDatabase()
 
         val podcastDao = migratedDatabase.podcastDao()
-        val podcast = podcastDao.findByUuid("c33338e0-ea44-0134-ec45-4114446340cb")
+        val podcast = podcastDao.findByUuidBlocking("c33338e0-ea44-0134-ec45-4114446340cb")
         assertNotNull("Podcast should be found", podcast)
         assertEquals("MaxFun", podcast?.title)
         assertNotNull(podcast?.addedDate)
@@ -87,7 +91,7 @@ class AppDatabaseTest {
         assertEquals(true, podcast?.overrideGlobalSettings)
         assertEquals(123, podcast?.startFromSecs)
         assertEquals(1.2, podcast?.playbackSpeed)
-        assertEquals(true, podcast?.isSilenceRemoved)
+        assertEquals(TrimMode.OFF, podcast?.trimMode)
         assertEquals(true, podcast?.isVolumeBoosted)
         assertEquals(true, podcast?.isSubscribed)
         assertEquals(true, podcast?.isShowNotifications)
@@ -110,7 +114,7 @@ class AppDatabaseTest {
             InstrumentationRegistry.getInstrumentation().targetContext,
             AppDatabase::class.java,
             TEST_DB,
-        )
+        ).addTypeConverters(ModelModule.provideRoomConverters(Moshi.Builder().build()))
             .addMigrations(
                 AppDatabase.MIGRATION_45_46,
                 AppDatabase.MIGRATION_46_47,
@@ -146,6 +150,33 @@ class AppDatabaseTest {
                 AppDatabase.MIGRATION_76_77,
                 AppDatabase.MIGRATION_77_78,
                 AppDatabase.MIGRATION_78_79,
+                AppDatabase.MIGRATION_79_80,
+                AppDatabase.MIGRATION_80_81,
+                AppDatabase.MIGRATION_82_83,
+                AppDatabase.MIGRATION_83_84,
+                AppDatabase.MIGRATION_84_85,
+                AppDatabase.MIGRATION_85_86,
+                AppDatabase.MIGRATION_86_87,
+                AppDatabase.MIGRATION_87_88,
+                AppDatabase.MIGRATION_89_90,
+                AppDatabase.MIGRATION_90_91,
+                AppDatabase.MIGRATION_91_92,
+                AppDatabase.MIGRATION_92_93,
+                AppDatabase.MIGRATION_93_94,
+                AppDatabase.MIGRATION_94_95,
+                AppDatabase.MIGRATION_95_96,
+                AppDatabase.MIGRATION_96_97,
+                AppDatabase.MIGRATION_97_98,
+                AppDatabase.MIGRATION_98_99,
+                AppDatabase.MIGRATION_99_100,
+                AppDatabase.MIGRATION_100_101,
+                AppDatabase.MIGRATION_101_102,
+                // 102 to 103 added via auto migration
+                AppDatabase.MIGRATION_103_104,
+                AppDatabase.MIGRATION_104_105,
+                AppDatabase.MIGRATION_105_106,
+                AppDatabase.MIGRATION_106_107,
+                AppDatabase.MIGRATION_107_108,
             )
             .build()
         // close the database and release any stream resources when the test finishes
@@ -162,7 +193,7 @@ class AppDatabaseTest {
         } ?: 0
     }
 
-    private fun insertTestData(database: OldDataOpenHelper?) {
+    private fun insertTestData(database: DataOpenHelper?) {
         database?.writableDatabase?.use {
             it.execSQL("INSERT INTO podcast (title) VALUES ('No UUID!');")
             it.execSQL("INSERT INTO podcast (uuid) VALUES ('e7a6f7d0-02f2-0133-1c51-059c869cc4eb');")

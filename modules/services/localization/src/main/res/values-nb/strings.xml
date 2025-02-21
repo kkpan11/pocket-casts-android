@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-Translation-Revision-Date: 2023-08-28 00:13:11+0000
+Translation-Revision-Date: 2024-06-24 08:10:05+0000
 Plural-Forms: nplurals=2; plural=n != 1;
 Generator: GlotPress/2.4.0-alpha
 Language: nb_NO
 -->
 <resources>
+    <string name="playback">Avspilling</string>
     <string name="bookmark">Bokmerke</string>
     <string name="details">Detaljer</string>
     <string name="episode">Episode</string>
@@ -35,10 +36,6 @@ Language: nb_NO
     <string name="deselect_all">Opphev valg av alle</string>
     <string name="deselect_all_below">Opphev valg av alle nedenfor</string>
     <string name="edit">Rediger</string>
-    <string name="whats_new_autoplay_title">Automatisk avspilling er her!</string>
-    <string name="whats_new_autoplay_body">Hvis du starter en episode mens Neste-køen er tom, fortsetter Automatisk avspilling å spille av episoder fra den podcasten eller listen.</string>
-    <string name="whats_new_autoplay_enable_button">Aktiver nå</string>
-    <string name="whats_new_autoplay_maybe_later_button">Kanskje senere</string>
     <string name="filters_download_limit_3">3 episoder</string>
     <string name="settings_headphone_controls_action_next">Neste handling</string>
     <string name="settings_headphone_controls_action_previous">Forrige handling</string>
@@ -62,7 +59,6 @@ Language: nb_NO
     <string name="player_sleep_add_1_minute">+ 1 minutt</string>
     <string name="settings_autoplay">Automatisk avspilling</string>
     <string name="onboarding_patron_feature_early_access_title">Tidlig tilgang til funksjoner</string>
-    <string name="onboarding_plus_feature_watch_playback">Klokkeavspilling</string>
     <string name="onboarding_plus_feature_extra_themes_icons_title">Ekstra temaer og appikoner</string>
     <string name="settings_continuous_playback_summary">Hvis Neste-køen er tom, spiller vi av episoder fra samme podcast eller liste som du lytter til nå.</string>
     <string name="renew_your_subscription">Forny abonnementet</string>
@@ -78,8 +74,6 @@ Language: nb_NO
     <string name="settings_help_logs_sent_to_phone_check_phone">Hvis telefonen din er paret, vises en popup-melding med loggene</string>
     <string name="settings_help_phone_unavailable_message">Prøv på nytt når telefonen er koblet til klokken.</string>
     <string name="settings_watch_logs">Klokkelogger</string>
-    <string name="podcasts_no_subscriptions">Ingen podcaster du abonnerer på</string>
-    <string name="podcasts_subscribe_on_phone">Abonner på podcaster på telefonen, så vises de her</string>
     <string name="podcast_loading">Laster podcastene dine</string>
     <string name="settings_could_not_open_on_phone">Kan ikke åpne på telefon</string>
     <string name="settings_about_terms_of_service_available_at">Vilkårene for tjenesten er tilgjengelig på %s</string>
@@ -88,11 +82,9 @@ Language: nb_NO
     <string name="error_invalid_email_address">Oppgi en gyldig e-postadresse.</string>
     <string name="error_invalid_password_length">Oppgi et passord som er minst seks tegn langt</string>
     <string name="error_server_failed">Det har oppstått en intern serverfeil. Prøv på nytt senere.</string>
-    <string name="log_in_no_network">Fant ingen nettverkstilkobling. Prøv på nytt senere.</string>
     <string name="settings_privacy_crash_link_short">Koble kontoen din</string>
     <string name="log_in_watch_requires_plus">Logg på med en Plus-konto for å bruke denne appen eller oppgradere besøket</string>
     <string name="log_in_with_plus">Logg på med en Plus-konto</string>
-    <string name="settings_app_icon_pride_2023">Pride 2023</string>
     <string name="effects">Effekter</string>
     <string name="player_effects_trim_level_up">Kuttenivå opp</string>
     <string name="player_effects_trim_level_down">Kuttenivå ned</string>
@@ -163,7 +155,6 @@ Language: nb_NO
     <string name="podcasts_all">Alle podcaster</string>
     <string name="search_history_row_type_episode_subtitle">Episode \u2022 %1$s \u2022 %2$s</string>
     <string name="search_show_all">Vis alle</string>
-    <string name="podcast">Podcast</string>
     <string name="search_podcasts_or_add_url">Søk etter podcaster eller legg til RSS URL</string>
     <string name="search_history_clear_all_confirm_button_title">Tøm søkehistorikk</string>
     <string name="search_history_clear_all_confirmation_message">Er du sikker på at du vil tømme søkehistorikken?</string>
@@ -177,7 +168,6 @@ Language: nb_NO
     <string name="settings_media_actions_customise">Tilpass mediehandlinger</string>
     <string name="settings_media_actions_show_title">Vis tilpassede mediehandlinger</string>
     <string name="settings_media_actions_show_subtitle">Vis tilpassede mediehandlinger i Android 13-medievarsler og Android Auto.</string>
-    <string name="plus_take_your_podcasting_to_next_level">Løft podcastingopplevelsen til neste nivå med eksklusiv tilgang til funksjoner og alternativer for tilpassing.</string>
     <string name="onboarding_recommendations_more">Mer %s</string>
     <string name="onboarding_plus_can_be_canceled_at_any_time">Kan kanselleres når som helst.</string>
     <string name="pocket_casts_query_podcasts">Pocket Casts-søk etter podcaster</string>
@@ -229,7 +219,6 @@ Language: nb_NO
     <string name="profile_cancel_confirm_subtitle">Dette endrer abonnementet til en gratiskonto.</string>
     <string name="profile_cancel_confirm_sub_expiry">Det nåværende abonnementet ditt vil forbli aktivt til %1$s.</string>
     <string name="profile_cancel_confirm_sub_expiry_date_fallback">utløpsdato</string>
-    <string name="podcast_not_subscribed">Ikke abonnent</string>
     <string name="settings_customize_buttons_displayed_in_android_13_notification_and_android_auto">Tilpass knappene som vises i Android 13-avspillingsvarslene og Android Auto.</string>
     <string name="settings_other_media_actions">Andre mediehandlinger</string>
     <string name="onboarding_import_from_castbox_step_3">Trykk på Innstillinger</string>
@@ -270,11 +259,7 @@ Language: nb_NO
     <string name="onboarding_recommendations_make_pocket_casts_yours">Gjør Pocket Casts til din egen ved å velge favorittpodcaster eller importere dem fra en annen podcastspiller. Du kan alltids gjøre dette senere.</string>
     <string name="onboarding_recommendations_import">Importer</string>
     <string name="onboarding_upgrade_everything_you_love_about_pocket_casts_plus">Alt du liker med Pocket Casts, pluss mye mer</string>
-    <string name="onboarding_upgrade_exclusive_features_and_options">Få tilgang til eksklusive funksjoner og alternativer for tilpassing</string>
-    <string name="onboarding_upgrade_unlock_all_features">Lås opp alle funksjoner</string>
-    <string name="onboarding_plus_feature_desktop_apps_title">Skrivebordsapper</string>
     <string name="onboarding_plus_feature_desktop_apps_text">Lytt på flere steder med appene våre for Windows, macOS og nett.</string>
-    <string name="onboarding_plus_feature_folders_title">Mapper</string>
     <string name="onboarding_plus_feature_folders_text">Ordne podcastene i mapper og synkroniser dem mellom alle enhetene dine.</string>
     <string name="onboarding_plus_feature_cloud_storage_text">Last opp filene til skylageret, slik at du har dem tilgjengelig overalt.</string>
     <string name="onboarding_plus_feature_themes_icons_title">Temaer og ikoner</string>
@@ -289,14 +274,11 @@ Language: nb_NO
     <string name="onboarding_forgot_password">Har du glemt passordet?</string>
     <string name="onboarding_email_invalid_message">Oppgi en gyldig e-postadresse</string>
     <string name="log_in">Logg på</string>
-    <string name="end_of_year_story_top_podcast_subtitle">Du lyttet til %1$d episoder av totalt %2$s</string>
     <string name="end_of_year_story_top_podcasts_share_text">Mine favorittpodcaster for året! %1$s</string>
-    <string name="end_of_year_story_top_podcasts_list_title">Mine favorittpodcaster for 2022</string>
     <string name="end_of_year_story_epilogue_subtitle">Ikke glem å dele med vennene dine og fremheve favorittene blant podcastskaperne</string>
     <string name="end_of_year_story_top_categories">Favorittkategoriene dine</string>
     <string name="end_of_year_story_top_categories_share_text">Podcastkategoriene jeg lyttet mest til</string>
     <string name="end_of_year_create_account_to_see">Lagre podcastene dine i skyen, få en gjennomgang ved årsslutt, og synkroniser fremdriften med andre enheter.</string>
-    <string name="end_of_year_launch_modal_image_title">Året i podcaster</string>
     <string name="end_of_year_story_intro_title">La oss feire et år med lytting!</string>
     <string name="end_of_year_story_listened_to_categories">Du lyttet til %1$d forskjellige kategorier dette året</string>
     <string name="end_of_year_story_listened_to_categories_subtitle">La oss ta en kikk på noen av favorittene…</string>
@@ -336,9 +318,7 @@ Language: nb_NO
     <string name="chapter_to_skip_to">Kapittel å gå til</string>
     <string name="chapter_to_skip_to_not_valid">Kapittelet å gå til %1$s er ikke gyldig</string>
     <string name="settings_app_icon_halloween">Halloween</string>
-    <string name="end_of_year_launch_modal_title">Året ditt i podcaster</string>
     <string name="end_of_year_launch_modal_summary">Se favorittpodcaster, kategorier, lyttestatistikk og mer. Del med venner og fremhev favorittskaperne!</string>
-    <string name="end_of_year_launch_modal_secondary_button_title">Ikke nå</string>
     <string name="settings_show_played">Vis avspilte episoder</string>
     <string name="settings_show_played_summary">Episoder som du har spilt av, vises fremdeles</string>
     <string name="profile_privacy_policy_read">Les personvernreglene</string>
@@ -451,7 +431,6 @@ Language: nb_NO
     <string name="settings_about_work_from_anywhere">Arbeid hvor som helst</string>
     <string name="settings_about_legal">Juridisk og mer</string>
     <string name="settings_about_work_with_us">Arbeid med oss</string>
-    <string name="settings_about_twitter">Twitter</string>
     <string name="settings_about_instagram">Instagram</string>
     <string name="settings_about_rate_us">Gi oss en rangering</string>
     <string name="settings_about_share_with_friends_message">Hei! Her er en lenke for å laste ned Pocket Casts-appen. Jeg liker den svært godt, og det tror jeg du også vil gjøre. \nhttps://www.pocketcasts.com</string>
@@ -475,13 +454,6 @@ Language: nb_NO
     <string name="share">Del</string>
     <string name="filters_update_filter">Oppdater filter</string>
     <string name="filters_chip_episode_status">Episodestatus</string>
-    <string name="profile_stats_day_listened">Dag lyttet</string>
-    <string name="profile_stats_seconds_listened">Sekunder lyttet</string>
-    <string name="profile_stats_second_listened">Sekund lyttet</string>
-    <string name="profile_stats_minutes_listened">Minutter lyttet</string>
-    <string name="profile_stats_minute_listened">Minutt lyttet</string>
-    <string name="profile_stats_hours_listened">Timer lyttet</string>
-    <string name="profile_stats_hour_listened">Time lyttet</string>
     <string name="filters_download_options">Nedlastingsalternativer</string>
     <string name="filters_release_date">Lanseringsdato</string>
     <string name="filters_duration">Varighet</string>
@@ -491,13 +463,6 @@ Language: nb_NO
     <string name="not_downloaded">Ikke nedlastet</string>
     <string name="downloaded">Nedlastet</string>
     <string name="all">Alle</string>
-    <string name="profile_stats_seconds_saved">Sekunder spart</string>
-    <string name="profile_stats_second_saved">Sekund spart</string>
-    <string name="profile_stats_minute_saved">Minutt spart</string>
-    <string name="profile_stats_hour_saved">Time spart</string>
-    <string name="profile_stats_day_saved">Dag spart</string>
-    <string name="profile_stats_hours_saved">Timer spart</string>
-    <string name="profile_stats_minutes_saved">Minutter spart</string>
     <string name="profile_cloud_edit_file">Rediger fil</string>
     <string name="profile_cloud_add_file">Legg til fil</string>
     <string name="profile_cloud_settings_title">Innstillinger for filer</string>
@@ -619,7 +584,6 @@ Language: nb_NO
     <string name="settings_status_service_ad_blocker_help_singular">Den vanligste årsaken er at du har konfigurert annonseblokkering på telefonen eller nettverket. Du må oppheve blokkeringen for domenet %s</string>
     <string name="settings_status_service_discover_summary">Oppdagingsdelen i appen, inkludert søking etter podcaster.</string>
     <string name="settings_status_service_discover">Oppdag og søk</string>
-    <string name="settings_status_service_account_summary">Tjenesten brukes til å lagre episodefremdrift, abonnementer, filtre osv.</string>
     <string name="settings_status_service_account">Kontotjeneste</string>
     <string name="settings_status_service_refresh_summary">Tjenesten brukes til å finne nye episoder.</string>
     <string name="settings_status_service_refresh">Oppdateringstjeneste</string>
@@ -630,7 +594,6 @@ Language: nb_NO
     <string name="settings_status_service_internet">Internett-tilkobling</string>
     <string name="settings_status_description">Kontroller tilkoblingen med viktige tjenester. Dette bidrar til å diagnostisere problemer med nettverk, proxyer, VPN, annonseblokkering og sikkerrhetsapper.</string>
     <string name="settings_status_page">Statusside</string>
-    <string name="settings_import_title">Importer abonnementer</string>
     <string name="settings_notification_default_sound">Standard lyd</string>
     <string name="settings_subscribe_to_played_summary">Podcaster du hører på, legges til automatisk på Podcaster-fanen</string>
     <string name="settings_opml_export_failed">Kan ikke lagre OPML-filen.</string>
@@ -703,7 +666,6 @@ Language: nb_NO
     <string name="settings_website_link">Kobling til nettsted</string>
     <string name="settings_view">Vis</string>
     <string name="settings_version">Versjon %1$s (%2$s)</string>
-    <string name="settings_use_embedded_podcast_artwork">Bruk innebygd podcast-grafikk</string>
     <string name="settings_use_android_light_dark_mode">Bruk lys/mørk Android-modus</string>
     <string name="settings_up_next_tap_summary">Hvis på, vil det spilles av ved å trykke på et element i Neste-køen. Et langt trykk viser episodealternativene.</string>
     <string name="settings_up_next_tap">Spill av Neste-episode ved trykking</string>
@@ -721,7 +683,6 @@ Language: nb_NO
     <string name="settings_title_about">Om</string>
     <string name="settings_title">Tittel</string>
     <string name="settings_theme">Tema</string>
-    <string name="settings_subscribe_to_played">Abonner på avspilte podcaster</string>
     <string name="settings_storage_store_on">Lagre podcaster på</string>
     <string name="settings_storage_sorry">Beklager</string>
     <string name="settings_storage_size_free">%s ledig</string>
@@ -750,8 +711,6 @@ Language: nb_NO
     <string name="settings_skip_back_time">Hopp bakover i tid</string>
     <string name="settings_show_artwork_details">Dette vil også vise grafikk på tilkoblede Bluetooth-enheter, klokker osv.</string>
     <string name="settings_show_artwork">Vis grafikk på låseskjerm</string>
-    <string name="settings_show_archived_summary_show">Nye podcaster du abonnerer på, vil vise arkiverte episoder.</string>
-    <string name="settings_show_archived_summary_hide">Nye podcaster du abonnerer på, vil ikke vise arkiverte episoder.</string>
     <string name="settings_show_archived_action_show">Vis</string>
     <string name="settings_show_archived_action_hide">Skjul</string>
     <string name="settings_row_action_summary">For episoder som ennå ikke er lastet ned, vises %s-knapper i listen.</string>
@@ -765,8 +724,6 @@ Language: nb_NO
     <string name="settings_podcasts_selected_all">Alle podcaster</string>
     <string name="settings_podcast_episode_grouping_title_season">Sesong</string>
     <string name="settings_podcast_episode_grouping_title_none">Ingen</string>
-    <string name="settings_podcast_episode_grouping_summary_none">For nye podcaster du abonnerer på, blir ikke episodene gruppert.</string>
-    <string name="settings_podcast_episode_grouping_summary">For nye podcaster du abonnerer på, blir episodene gruppert etter %s.</string>
     <string name="settings_podcast_episode_grouping">Gruppering av podcast-episode</string>
     <string name="settings_podcast_custom">Egendefinert for denne podcasten</string>
     <string name="settings_podcast_artwork">Podcast-grafikk</string>
@@ -800,7 +757,6 @@ Language: nb_NO
     <string name="settings_import_opml_title">Importer OPML</string>
     <string name="settings_import_opml_stop">Stopp</string>
     <string name="settings_import_opml_progress">%1$d av %2$d podcaster</string>
-    <string name="settings_import_file_summary">Hvis du abonnerer på podcaster i en annen app eller tjeneste, kan Pocket Casts importere dem fra en OPML-fil.</string>
     <string name="settings_import_file">Velg fil</string>
     <string name="settings_import_choose_file">Velg en OPML-fil.</string>
     <string name="settings_help_contact_support">Kontakt støtte</string>
@@ -808,12 +764,9 @@ Language: nb_NO
     <string name="settings_get_plus_and_more">Skaff deg Pocket Casts Plus for å frigjøre denne funksjonen og mer!</string>
     <string name="settings_general_player">Avspiller</string>
     <string name="settings_general_defaults">Standarder</string>
-    <string name="settings_export_subscriptions">Eksporter abonnementer</string>
-    <string name="settings_export_send_email_summary">Eksporter abonnementene dine i OPML-formatet, som er ganske nerdete (men med bred støtte).</string>
     <string name="settings_export_send_email">Send e-post</string>
     <string name="settings_export_save_file_summary">Eksport OPML-filen til lagringen din.</string>
     <string name="settings_export_save_file">Lagre fil</string>
-    <string name="settings_embedded_artwork_details">Viser grafikk fra den nedlastede filen (hvis den finnes) i avspilleren i stedet for å bruke grafikk fra programmet.</string>
     <string name="settings_developer">Utvikler</string>
     <string name="settings_close_upgrade_offer">lukk oppgraderingstilbud</string>
     <string name="settings_choose_podcasts">Velg podcaster</string>
@@ -882,17 +835,10 @@ Language: nb_NO
     <string name="plus_themes_icons_body">Vis ditt sanne jeg. Eksklusive ikoner og temaer kun for Plus-klubben.</string>
     <string name="plus_themes_icons">Temaer og ikoner</string>
     <string name="plus_thanks_for_your_support_bang">Takk for støtten!</string>
-    <string name="plus_lifetime_member">Livstidsmedlem</string>
     <string name="plus_learn_more_button">Finn ut mer</string>
     <string name="plus_learn_more_about_plus">Finn ut mer om Pocket Casts Plus</string>
-    <string name="plus_desktop_apps_body">Ta med deg podcastene til flere steder med appene våre for Windows, macOS og Web.</string>
     <string name="plus_desktop_apps">Skrivebordsapper</string>
-    <string name="plus_description_title">Forbedrede funksjoner for avanserte lyttere</string>
-    <string name="plus_description_body">Bli personlig, og bli distribuert, alt på én gang. Last opp dine personlige lydfiler til skyserverne våre, få tilgang til kontoen din via webspilleren, og sett ditt personlige preg på appen.</string>
-    <string name="plus_create_marketing_features"> Alt</string>
     <string name="settings_logs">Logger</string>
-    <string name="plus_cloud_storage_limit">%d GB lagringsplass i skyen</string>
-    <string name="plus_cloud_storage_body">Sett fart på forelesningene dine. Skum gjennom annet innhold. Vær din egen Podcast-DJ.</string>
     <string name="plus_cloud_storage">Lagring i skyen</string>
     <string name="profile_expiry_date_unknown">Ukjent</string>
     <string name="profile_yearly">Årlig</string>
@@ -900,7 +846,6 @@ Language: nb_NO
     <string name="profile_welcome_to_plus">Velkommen til Pocket Casts Plus!</string>
     <string name="profile_welcome_to_free">Velkommen til Pocket Casts!</string>
     <string name="profile_web_player">Webspiller</string>
-    <string name="profile_upgrade_to_plus">Oppgrader til Plus</string>
     <string name="profile_updates_ends">Oppdateringer avsluttes: %s</string>
     <string name="profile_updates_ended">Oppdateringer avsluttet: %s</string>
     <string name="profile_time_free">%s ledig</string>
@@ -935,7 +880,6 @@ Language: nb_NO
     <string name="profile_stats_trim_silence">Kutt av stillhet</string>
     <string name="profile_stats_listened_for">Du har lyttet for</string>
     <string name="profile_stats_auto_skipping">Hopp over automatisk</string>
-    <string name="profile_stats_days_listened">Dager lyttet</string>
     <string name="profile_stat_days_listened">Dager lyttet</string>
     <string name="profile_sonos_title">Pocket Casts og Sonos</string>
     <string name="profile_sonos_setup_account">Konfigurer konto</string>
@@ -959,7 +903,6 @@ Language: nb_NO
     <string name="profile_reset_password_failed">Kan ikke sende et nytt passord til deg via e-post. Prøv på nytt senere.</string>
     <string name="profile_reset_password">Tilbakestill passord</string>
     <string name="profile_regular_price">Regulær pris</string>
-    <string name="profile_regular">Regulær</string>
     <string name="profile_refreshing">Oppdaterer …</string>
     <string name="profile_refreshed_never">Aldri oppdatert</string>
     <string name="profile_refresh_status_unknown">Ukjent</string>
@@ -1005,9 +948,7 @@ Language: nb_NO
     <string name="profile_joined">Ble med:</string>
     <string name="profile_get_plus">Skaff deg Pocket Casts Plus for å frigjøre denne funksjonen og mye mer!</string>
     <string name="profile_free_account">Gratis konto</string>
-    <string name="profile_free">Gratis</string>
     <string name="profile_forgot_your_password">Jeg har glemt passordet mitt</string>
-    <string name="profile_find_out_more">Finn ut mer om Pocket Casts Plus</string>
     <string name="profile_files_remove_image">Erstatt bilde</string>
     <string name="profile_files_empty_title">Ingen filer</string>
     <string name="profile_files_empty_summary">Vil du lytte til dine egne filer?\nTrykk på +-knappen for å åpne dem i Pocket Casts, så vises de her.</string>
@@ -1017,9 +958,6 @@ Language: nb_NO
     <string name="profile_file_locked">låst</string>
     <string name="profile_file">Fil</string>
     <string name="profile_feature_requires">Denne funksjonen krever\nPocket Casts Plus</string>
-    <string name="profile_extra_themes">Ekstra temaer</string>
-    <string name="profile_extra_app_icons">Ekstra appikoner</string>
-    <string name="profile_everything_unlocked">Alt låst opp</string>
     <string name="profile_ends">Avsluttes %s</string>
     <string name="profile_ended">Avsluttet %s</string>
     <string name="profile_end_tour">AVSLUTT OMVISNING</string>
@@ -1051,15 +989,9 @@ Language: nb_NO
     <string name="profile_select_account_type">Velg kontotype</string>
     <string name="profile_create_completed">Komplett konto</string>
     <string name="profile_create_terms_of_use">Bruksvilkår</string>
-    <string name="profile_create_tos_full_terms_of_use">Fullstendige bruksvilkår</string>
-    <string name="profile_create_tos_disagree">Nei takk</string>
-    <string name="profile_create_tos_agree">Jeg godtar</string>
-    <string name="profile_create_tos">Før du kan bli med i Plus-klubben, må du godta bruksvilkårene våre. Du kan lese gjennom dem når det passer ved å bruke koblingen nedenfor.</string>
     <string name="profile_create_subscription_failed">Kunne ikke opprette abonnement. Prøv på nytt</string>
-    <string name="profile_create_privacy_policy_title">Retningslinjer for personvern</string>
     <string name="profile_create_privacy_policy">Vi har oppgitt en kobling til retningslinjene for personvern, hvis du er interessert. Vi har prøvd å fatte oss i korthet og gå rett på sak med så lite juridisk tekst som mulig.</string>
     <string name="profile_create_newsletter_summary">Få nyheter, appoppdateringer, tematiserte podcast-lister , intervjuer og mer.</string>
-    <string name="profile_create_license">Vi beklager at vi fremstår som formelle</string>
     <string name="profile_create_failed">Kunne ikke opprette konto. Prøv på nytt</string>
     <string name="profile_create_account_image">bilde av oppretting av konto</string>
     <string name="profile_create_account">Opprett konto</string>
@@ -1106,7 +1038,6 @@ Language: nb_NO
     <string name="profile_alreadysignedindescription">Du kan bare være logget inn på én konto om gangen.</string>
     <string name="profile_alreadysignedin">Du er allerede logget inn</string>
     <string name="profile_already_have_account">Har du allerede en Pocket Casts-konto?</string>
-    <string name="profile_almost_everything">Nesten alt</string>
     <string name="profile_account_delete_yes">Ja, slett den</string>
     <string name="profile_account_created">Konto opprettet</string>
     <string name="profile_access_ends">Tilgang avsluttes: %s</string>
@@ -1162,7 +1093,6 @@ Language: nb_NO
     <string name="filters_choose_podcasts">Velg podcaster</string>
     <string name="filters_chip_media_type">Medietype</string>
     <string name="filters_chip_download_status">Nedlastingsstatus</string>
-    <string name="profile_stats_days_saved">Dager spart</string>
     <string name="filters_chip_all_your_podcasts">Alle podcastene dine</string>
     <string name="filters_all_your_podcasts">Alle podcastene dine</string>
     <string name="episode_filters">Episodefiltre</string>
@@ -1214,7 +1144,6 @@ Language: nb_NO
     <string name="podcast_effects_summary_speed">Hastighet %s×</string>
     <string name="podcast_included_in_filters">Inkludert i %s</string>
     <string name="podcast_not_in_filters">Ikke inkludert i noen filtre</string>
-    <string name="podcast_unsubscribe_warning">Hvis du sier opp abonnementet, slettes alle nedlastede filer.</string>
     <string name="podcast_unsubscribe_downloaded_file_plural">%d nedlastede filer</string>
     <string name="podcast_unsubscribe_downloaded_file_singular">1 nedlastet fil</string>
     <string name="podcast_share_open_fail">Kan ikke laste inn detaljer om delt podcast. Hvis problemet vedvarer, kan du kontakte personen som delte med deg, og spørre hva som skjer.</string>
@@ -1229,7 +1158,6 @@ Language: nb_NO
     <string name="podcast_supporter_cancelled">Støtte kansellert</string>
     <string name="podcast_supporter">STØTTESPILLER</string>
     <string name="podcast_support_this_podcast">Støtt dette programmet</string>
-    <string name="podcast_subscribed">Abonnert på</string>
     <string name="podcast_sort_episodes">Sorter episoder</string>
     <string name="podcast_share_open_file_in">Åpne fil i …</string>
     <string name="podcast_share_episode">Del episode</string>
@@ -1314,7 +1242,6 @@ Language: nb_NO
     <string name="podcasts_share_missing_title">Angi en tittel for listen.</string>
     <string name="podcasts_share_create_error">Obs, kan ikke dele</string>
     <string name="podcasts_share_title">Tittel</string>
-    <string name="podcasts_share_subscribe_to_all">ABONNER PÅ ALLE</string>
     <string name="podcasts_share_selected_podcasts">Del valgte podcaster</string>
     <string name="podcasts_share_select_all">Velg alle</string>
     <string name="podcasts_share_list">Delt liste</string>
@@ -1349,7 +1276,6 @@ Language: nb_NO
     <string name="podcasts">Podcaster</string>
     <string name="player_started_from">Starter podcast fra %d sekunder</string>
     <string name="player_skipped_last">Hoppet over de siste %d sekundene</string>
-    <string name="player_sleep_time_fired">Tidtaker for dvalemodus stoppet ved slutten av episoden.\nNatt natt!</string>
     <string name="player_actions_show_as_delete_for_custom">Vises som sletting for egendefinerte episoder</string>
     <string name="player_actions_hidden_for_custom">Skjult for egendefinerte episoder</string>
     <string name="player_rearrange_actions_hidden">Flere handlinger</string>
@@ -1371,16 +1297,12 @@ Language: nb_NO
     <string name="player_time_saved_detail">Totalt har du spart %s ved å bruke denne funksjonen.</string>
     <string name="player_tab_playing_wide">Spilles av nå</string>
     <string name="player_tab_playing">Spiller av</string>
-    <string name="player_sleep_when_episode_ends">I dvalemodus når episoden er ferdig</string>
     <string name="player_sleep_timer">Tidtaker for dvalemodus</string>
     <string name="player_sleep_timer_title">Tidtaker for dvalemodus</string>
     <string name="player_sleep_end_of_episode">Slutt på episode</string>
-    <string name="player_sleep_custom_plus">Egendefinert pluss</string>
-    <string name="player_sleep_custom_minus">Egendefinert minus</string>
     <string name="player_sleep_cancel_timer">Avbryt tidtaker</string>
     <string name="player_sleep_add_5_minutes">+ 5 minutter</string>
     <string name="player_sleep_60_minutes">60 minutter</string>
-    <string name="player_sleep_5_minutes">5 minutter</string>
     <string name="player_sleep_30_minutes">30 minutter</string>
     <string name="player_sleep_15_minutes">15 minutter</string>
     <string name="player_pip">Gå inn i bilde-i-bilde</string>
@@ -1481,10 +1403,8 @@ Language: nb_NO
     <string name="today">I dag</string>
     <string name="learn_more">Finn ut mer.</string>
     <string name="up_next">Neste</string>
-    <string name="unsubscribe">Si opp abonnement</string>
     <string name="unplayed">Ikke avspilt</string>
     <string name="unarchive_all">Fjern alle fra arkiv</string>
-    <string name="subscribe">Abonner</string>
     <string name="stream">Strøm</string>
     <string name="stop_downloading">Stopp nedlasting</string>
     <string name="starred">Har fått stjerner</string>

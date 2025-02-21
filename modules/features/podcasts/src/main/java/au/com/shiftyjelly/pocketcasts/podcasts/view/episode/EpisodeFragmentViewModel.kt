@@ -9,10 +9,10 @@ import androidx.lifecycle.map
 import androidx.lifecycle.toLiveData
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.EpisodeAnalytics
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
+import au.com.shiftyjelly.pocketcasts.models.entity.BaseEpisode
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
@@ -22,7 +22,6 @@ import au.com.shiftyjelly.pocketcasts.repositories.playback.UpNextQueue
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.shownotes.ShowNotesManager
-import au.com.shiftyjelly.pocketcasts.servers.ServerManager
 import au.com.shiftyjelly.pocketcasts.servers.shownotes.ShowNotesState
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import au.com.shiftyjelly.pocketcasts.utils.Network
@@ -38,8 +37,11 @@ import io.reactivex.schedulers.Schedulers
 import java.util.Date
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration
+import kotlin.time.DurationUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.rx2.asFlowable
 
@@ -49,11 +51,10 @@ class EpisodeFragmentViewModel @Inject constructor(
     val podcastManager: PodcastManager,
     val theme: Theme,
     val downloadManager: DownloadManager,
-    val serverManager: ServerManager,
     val playbackManager: PlaybackManager,
     val settings: Settings,
     private val showNotesManager: ShowNotesManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     private val episodeAnalytics: EpisodeAnalytics,
 ) : ViewModel(), CoroutineScope {
     override val coroutineContext: CoroutineContext
@@ -72,7 +73,18 @@ class EpisodeFragmentViewModel @Inject constructor(
     var episode: PodcastEpisode? = null
     var isFragmentChangingConfigurations: Boolean = false
 
-    fun setup(episodeUuid: String, podcastUuid: String?, forceDark: Boolean) {
+    private var startPlaybackTimestamp: Duration? = null
+    private var autoDispatchPlay = false
+
+    fun setup(
+        episodeUuid: String,
+        podcastUuid: String?,
+        timestamp: Duration?,
+        autoPlay: Boolean,
+        forceDark: Boolean,
+    ) {
+        startPlaybackTimestamp = timestamp
+        autoDispatchPlay = autoPlay
         val isDarkTheme = forceDark || theme.isDarkTheme
         val progressUpdatesObservable = downloadManager.progressUpdateRelay
             .filter { it.episodeUuid == episodeUuid }
@@ -83,12 +95,12 @@ class EpisodeFragmentViewModel @Inject constructor(
         // If we can't find it in the database and we know the podcast uuid we can try load it
         // from the server
         val onEmptyHandler = if (podcastUuid != null) {
-            podcastManager.findOrDownloadPodcastRx(podcastUuid).flatMapMaybe {
+            podcastManager.findOrDownloadPodcastRxSingle(podcastUuid).flatMapMaybe {
                 val episode = it.episodes.find { episode -> episode.uuid == episodeUuid }
                 if (episode != null) {
                     Maybe.just(episode)
                 } else {
-                    episodeManager.downloadMissingEpisode(episodeUuid, podcastUuid, PodcastEpisode(uuid = episodeUuid, publishedDate = Date()), podcastManager, downloadMetaData = true).flatMap { missingEpisode ->
+                    episodeManager.downloadMissingEpisodeRxMaybe(episodeUuid, podcastUuid, PodcastEpisode(uuid = episodeUuid, publishedDate = Date()), podcastManager, downloadMetaData = true, source = source).flatMap { missingEpisode ->
                         if (missingEpisode is PodcastEpisode) {
                             Maybe.just(missingEpisode)
                         } else {
@@ -102,7 +114,7 @@ class EpisodeFragmentViewModel @Inject constructor(
         }
 
         @Suppress("DEPRECATION")
-        val maybeEpisode = episodeManager.findByUuidRx(episodeUuid)
+        val maybeEpisode = episodeManager.findByUuidRxMaybe(episodeUuid)
 
         val stateObservable: Flowable<EpisodeFragmentState> = maybeEpisode
             .switchIfEmpty(onEmptyHandler)
@@ -113,14 +125,24 @@ class EpisodeFragmentViewModel @Inject constructor(
                     EpisodeFragmentState.Loaded(episodeLoaded, podcast, showNotesState, tintColor, podcastColor, downloadProgress)
                 }
                 return@flatMapPublisher Flowable.combineLatest(
-                    episodeManager.observeByUuid(episodeUuid).asFlowable(),
-                    podcastManager.findPodcastByUuidRx(episode.podcastUuid).toFlowable(),
+                    episodeManager.findByUuidFlow(episodeUuid).asFlowable(),
+                    podcastManager.findPodcastByUuidRxMaybe(episode.podcastUuid).toFlowable(),
                     showNotesManager.loadShowNotesFlow(podcastUuid = episode.podcastUuid, episodeUuid = episode.uuid).asFlowable(),
                     progressUpdatesObservable,
                     zipper,
                 )
             }
-            .doOnNext { if (it is EpisodeFragmentState.Loaded) { episode = it.episode } }
+            .doOnNext {
+                if (it is EpisodeFragmentState.Loaded) {
+                    if (autoDispatchPlay) {
+                        val playTimestamp = startPlaybackTimestamp
+                        autoDispatchPlay = false
+                        startPlaybackTimestamp = null
+                        play(it.episode, playTimestamp)
+                    }
+                    episode = it.episode
+                }
+            }
             .onErrorReturn { EpisodeFragmentState.Error(it) }
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeOn(Schedulers.io())
@@ -174,10 +196,10 @@ class EpisodeFragmentViewModel @Inject constructor(
                     analyticsEvent = AnalyticsEvent.EPISODE_DOWNLOAD_CANCELLED
                 } else if (!it.isDownloaded) {
                     it.autoDownloadStatus = PodcastEpisode.AUTO_DOWNLOAD_STATUS_MANUAL_OVERRIDE_WIFI
-                    downloadManager.addEpisodeToQueue(it, "episode card", true)
+                    downloadManager.addEpisodeToQueue(it, "episode card", fireEvent = true, source = source)
                     analyticsEvent = AnalyticsEvent.EPISODE_DOWNLOAD_QUEUED
                 }
-                episodeManager.clearPlaybackError(episode)
+                episodeManager.clearPlaybackErrorBlocking(episode)
                 analyticsEvent?.let { event ->
                     episodeAnalytics.trackEvent(event, source = source, uuid = it.uuid)
                 }
@@ -191,10 +213,10 @@ class EpisodeFragmentViewModel @Inject constructor(
             episode?.let { episode ->
                 if (isOn) {
                     event = AnalyticsEvent.EPISODE_MARKED_AS_PLAYED
-                    episodeManager.markAsPlayed(episode, playbackManager, podcastManager)
+                    episodeManager.markAsPlayedBlocking(episode, playbackManager, podcastManager)
                 } else {
                     event = AnalyticsEvent.EPISODE_MARKED_AS_UNPLAYED
-                    episodeManager.markAsNotPlayed(episode)
+                    episodeManager.markAsNotPlayedBlocking(episode)
                 }
                 episodeAnalytics.trackEvent(event, source, episode.uuid)
             }
@@ -239,10 +261,10 @@ class EpisodeFragmentViewModel @Inject constructor(
         launch {
             episode?.let { episode ->
                 if (isOn) {
-                    episodeManager.archive(episode, playbackManager)
+                    episodeManager.archiveBlocking(episode, playbackManager)
                     episodeAnalytics.trackEvent(AnalyticsEvent.EPISODE_ARCHIVED, source, episode.uuid)
                 } else {
-                    episodeManager.unarchive(episode)
+                    episodeManager.unarchiveBlocking(episode)
                     episodeAnalytics.trackEvent(AnalyticsEvent.EPISODE_UNARCHIVED, source, episode.uuid)
                 }
             }
@@ -255,25 +277,53 @@ class EpisodeFragmentViewModel @Inject constructor(
 
     fun playClickedGetShouldClose(
         warningsHelper: WarningsHelper,
+        showedStreamWarning: Boolean,
         force: Boolean = false,
         fromListUuid: String? = null,
     ): Boolean {
         episode?.let { episode ->
-            if (isPlaying.value == true) {
-                playbackManager.pause(sourceView = source)
-                return false
-            } else {
-                fromListUuid?.let {
-                    FirebaseAnalyticsTracker.podcastEpisodePlayedFromList(it, episode.podcastUuid)
-                    analyticsTracker.track(AnalyticsEvent.DISCOVER_LIST_EPISODE_PLAY, mapOf(LIST_ID_KEY to it, PODCAST_ID_KEY to episode.podcastUuid))
+            val timestamp = startPlaybackTimestamp
+            when {
+                isPlaying.value == true -> {
+                    playbackManager.pause(sourceView = source)
+                    return false
                 }
-                playbackManager.playNow(episode, forceStream = force, sourceView = source)
-                warningsHelper.showBatteryWarningSnackbarIfAppropriate()
-                return true
+                timestamp != null -> {
+                    startPlaybackTimestamp = null
+                    autoDispatchPlay = false
+                    play(episode, timestamp)
+                    return true
+                } else -> {
+                    startPlaybackTimestamp = null
+                    autoDispatchPlay = false
+                    fromListUuid?.let {
+                        analyticsTracker.track(AnalyticsEvent.DISCOVER_LIST_EPISODE_PLAY, mapOf(LIST_ID_KEY to it, PODCAST_ID_KEY to episode.podcastUuid))
+                    }
+                    playbackManager.playNow(
+                        episode = episode,
+                        forceStream = force,
+                        showedStreamWarning = showedStreamWarning,
+                        sourceView = source,
+                    )
+                    warningsHelper.showBatteryWarningSnackbarIfAppropriate()
+                    return true
+                }
             }
         }
 
         return false
+    }
+
+    private fun play(
+        episode: BaseEpisode,
+        timestamp: Duration?,
+    ) {
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
+            playbackManager.playNowSync(episode, sourceView = source)
+            if (timestamp != null) {
+                playbackManager.seekToTimeMsSuspend(timestamp.toInt(DurationUnit.MILLISECONDS))
+            }
+        }
     }
 
     fun starClicked() {

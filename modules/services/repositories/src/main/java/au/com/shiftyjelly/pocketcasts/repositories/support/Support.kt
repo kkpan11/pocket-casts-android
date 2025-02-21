@@ -13,10 +13,12 @@ import androidx.lifecycle.toPublisher
 import androidx.work.WorkManager
 import au.com.shiftyjelly.pocketcasts.localization.R
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
+import au.com.shiftyjelly.pocketcasts.models.entity.Podcast.Companion.AUTO_DOWNLOAD_NEW_EPISODES
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.models.to.SubscriptionStatus
 import au.com.shiftyjelly.pocketcasts.models.type.SubscriptionTier
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
+import au.com.shiftyjelly.pocketcasts.preferences.model.AutoPlaySource
 import au.com.shiftyjelly.pocketcasts.repositories.download.DownloadManager
 import au.com.shiftyjelly.pocketcasts.repositories.file.FileStorage
 import au.com.shiftyjelly.pocketcasts.repositories.file.StorageOptions
@@ -70,11 +72,6 @@ class Support @Inject constructor(
     override val coroutineContext: CoroutineContext
         get() = Dispatchers.Default
 
-    val afterPlayingValues
-        get() = context.resources.getStringArray(R.array.settings_auto_archive_played_values)
-    val inactiveValues
-        get() = context.resources.getStringArray(R.array.settings_auto_archive_inactive_values)
-
     @Suppress("DEPRECATION")
     suspend fun shareLogs(subject: String, intro: String, emailSupport: Boolean, context: Context): Intent {
         val dialog = withContext(Dispatchers.Main) {
@@ -83,7 +80,7 @@ class Support @Inject constructor(
         val intent = Intent(Intent.ACTION_SEND)
 
         withContext(Dispatchers.IO) {
-            intent.type = "text/html"
+            intent.type = "message/rfc822"
             if (emailSupport) {
                 intent.putExtra(Intent.EXTRA_EMAIL, arrayOf("support@pocketcasts.com"))
             }
@@ -109,7 +106,7 @@ class Support @Inject constructor(
                         out.close()
 
                         val fileUri =
-                            FileUtil.createUriWithReadPermissions(debugFile, intent, context)
+                            FileUtil.createUriWithReadPermissions(context, debugFile, intent)
                         intent.putExtra(Intent.EXTRA_STREAM, fileUri)
                         intent.putExtra(
                             Intent.EXTRA_TEXT,
@@ -140,33 +137,6 @@ class Support @Inject constructor(
         return intent
     }
 
-    suspend fun shareWearLogs(logBytes: ByteArray, subject: String, context: Context): Intent =
-        withContext(Dispatchers.IO) {
-            val intent = Intent(Intent.ACTION_SEND)
-            intent.type = "text/html"
-
-            val isPaid = subscriptionManager.getCachedStatus() is SubscriptionStatus.Paid
-            intent.putExtra(
-                Intent.EXTRA_SUBJECT,
-                "$subject v${settings.getVersion()} ${getAccountType(isPaid)}",
-            )
-
-            try {
-                val emailFolder = File(context.filesDir, "email")
-                emailFolder.mkdirs()
-                val debugFile = File(emailFolder, "debug_wear.txt")
-
-                debugFile.writeBytes(logBytes)
-                val fileUri =
-                    FileUtil.createUriWithReadPermissions(debugFile, intent, context)
-                intent.putExtra(Intent.EXTRA_STREAM, fileUri)
-            } catch (e: Exception) {
-                Timber.e(e)
-                intent.putExtra(Intent.EXTRA_TEXT, String(logBytes))
-            }
-            intent
-        }
-
     suspend fun emailWearLogsToSupportIntent(logBytes: ByteArray, context: Context): Intent {
         val subject = "Android wear support"
         val intro = "Hi there, just needed help with something..."
@@ -188,7 +158,7 @@ class Support @Inject constructor(
 
                 debugFile.writeBytes(logBytes)
                 val fileUri =
-                    FileUtil.createUriWithReadPermissions(debugFile, intent, context)
+                    FileUtil.createUriWithReadPermissions(context, debugFile, intent)
                 intent.putExtra(Intent.EXTRA_STREAM, fileUri)
                 intent.putExtra(
                     Intent.EXTRA_TEXT,
@@ -214,14 +184,10 @@ class Support @Inject constructor(
     }
 
     private fun getAccountType(isPaid: Boolean) = if (isPaid) {
-        if (FeatureFlag.isEnabled(Feature.ADD_PATRON_ENABLED)) {
-            when ((subscriptionManager.getCachedStatus() as SubscriptionStatus.Paid).tier) {
-                SubscriptionTier.PATRON -> "Patron Account"
-                SubscriptionTier.PLUS -> "Plus Account"
-                SubscriptionTier.NONE -> ""
-            }
-        } else {
-            "Plus Account"
+        when ((subscriptionManager.getCachedStatus() as SubscriptionStatus.Paid).tier) {
+            SubscriptionTier.PATRON -> "Patron Account"
+            SubscriptionTier.PLUS -> "Plus Account"
+            SubscriptionTier.NONE -> ""
         }
     } else {
         ""
@@ -264,7 +230,7 @@ class Support @Inject constructor(
             output.append(eol)
 
             output.append("Background refresh: ").append(settings.backgroundRefreshPodcasts.value).append(eol)
-            output.append("Battery restriction: ${systemBatteryRestrictions.status}")
+            output.append("Battery restriction: ${systemBatteryRestrictions.status}").append(eol)
             output.append(eol)
 
             if (Build.VERSION.SDK_INT >= 30) {
@@ -281,12 +247,16 @@ class Support @Inject constructor(
                 }
             }
 
+            val features = Feature.entries.map { "${it.key}: ${FeatureFlag.isEnabled(it)}" }
+            output.append("Feature flags").append(eol)
+            features.forEach { output.append("  ").append(it).append(eol) }
+
             val podcastsOutput = StringBuilder()
             podcastsOutput.append("Podcasts").append(eol).append("--------").append(eol).append(eol)
             val autoDownloadOn = booleanArrayOf(false)
             val uuidToPodcast = HashMap<String, Podcast>()
             try {
-                val podcasts = podcastManager.findSubscribed()
+                val podcasts = podcastManager.findSubscribedBlocking()
                 for (podcast in podcasts) {
                     if (podcast.isAutoDownloadNewEpisodes) {
                         autoDownloadOn[0] = true
@@ -295,14 +265,17 @@ class Support @Inject constructor(
                     podcastsOutput.append(if (podcast.title.isEmpty()) "-" else podcast.title).append(eol)
                     podcastsOutput.append("Last episode: ").append(podcast.latestEpisodeUuid).append(eol)
                     val effects = podcast.playbackEffects
-                    podcastsOutput.append("Audio effects: ").append(if (podcast.overrideGlobalEffects) "on" else "off").append(" Silence removed: ").append(effects.trimMode).append(" Speed: ").append(effects.playbackSpeed).append(" Boost: ")
-                        .append(if (effects.isVolumeBoosted) "on" else "off").append(eol)
+                    podcastsOutput.append("Audio effects: ").append(if (podcast.overrideGlobalEffects) "on" else "off")
+                        .append(" Silence removed: ").append(effects.trimMode.toString().lowercase())
+                        .append(" Speed: ").append(effects.playbackSpeed)
+                        .append(" Boost: ").append(if (effects.isVolumeBoosted) "on" else "off")
+                        .append(eol)
                     podcastsOutput.append("Auto download? ").append(podcast.isAutoDownloadNewEpisodes).append(eol)
                     podcastsOutput.append("Custom auto archive: ").append(podcast.overrideGlobalArchive.toString()).append(eol)
                     if (podcast.overrideGlobalArchive) {
                         podcastsOutput.append("Episode limit: ").append(podcast.autoArchiveEpisodeLimit).append(eol)
-                        podcastsOutput.append("Archive after playing: ").append(afterPlayingValues[podcast.autoArchiveAfterPlaying]).append(eol)
-                        podcastsOutput.append("Archive inactive: ").append(inactiveValues[podcast.autoArchiveInactive]).append(eol)
+                        podcastsOutput.append("Archive after playing: ").append(podcast.autoArchiveAfterPlaying?.analyticsValue).append(eol)
+                        podcastsOutput.append("Archive inactive: ").append(podcast.autoArchiveInactive?.analyticsValue).append(eol)
                     }
                     podcastsOutput.append("Auto add to up next: ").append(autoAddToUpNextToString(podcast.autoAddToUpNext)).append(eol)
                     podcastsOutput.append(eol)
@@ -315,27 +288,35 @@ class Support @Inject constructor(
 
             output.append(eol)
             output.append("Auto archive settings").append(eol)
-            output.append("Auto archive played episodes after: ${settings.autoArchiveAfterPlaying.value.analyticsValue}").append(eol)
-            output.append("Auto archive inactive episodes after: ${settings.autoArchiveInactive.value.analyticsValue}").append(eol)
-            output.append("Auto archive starred episodes: ${settings.autoArchiveIncludeStarred.value}").append(eol)
+            output.append("  Auto archive played episodes after: ${settings.autoArchiveAfterPlaying.value.analyticsValue}").append(eol)
+            output.append("  Auto archive inactive episodes after: ${settings.autoArchiveInactive.value.analyticsValue}").append(eol)
+            output.append("  Auto archive starred episodes: ${settings.autoArchiveIncludesStarred.value}").append(eol)
 
             output.append(eol)
             output.append("Auto downloads").append(eol)
             output.append("  Any podcast? ").append(yesNoString(autoDownloadOn[0])).append(eol)
+            output.append("  New episodes? ").append(yesNoString(settings.autoDownloadNewEpisodes.value == AUTO_DOWNLOAD_NEW_EPISODES)).append(eol)
+            output.append("  On follow? ").append(yesNoString(settings.autoDownloadOnFollowPodcast.value)).append(eol)
+            output.append("  Limit downloads: ").append(settings.autoDownloadLimit.value).append(eol)
             output.append("  Up Next? ").append(yesNoString(settings.autoDownloadUpNext.value)).append(eol)
             output.append("  Only on unmetered WiFi? ").append(yesNoString(settings.autoDownloadUnmeteredOnly.value)).append(eol)
             output.append("  Only when charging? ").append(yesNoString(settings.autoDownloadOnlyWhenCharging.value)).append(eol)
-            output.append(eol)
 
+            output.append(eol)
+            output.append("Auto-play settings").append(eol)
+            output.append("  Is enabled? ${settings.autoPlayNextEpisodeOnEmpty.value}").append(eol)
+            output.append("  Latest source: ${settings.lastAutoPlaySource.value.prettyPrint(podcastManager, playlistManager)}").append(eol)
+
+            output.append(eol)
             output.append("Current connection").append(eol)
             output.append("  Type: ").append(Network.getConnectedNetworkTypeName(context).lowercase()).append(eol)
             output.append("  Metered? ").append(if (Network.isActiveNetworkMetered(context)) "yes (costs money)" else "no (unlimited, free)").append(eol)
             output.append("  Restrict Background Status: ").append(Network.getRestrictBackgroundStatusString(context)).append(eol)
-            output.append(eol)
 
+            output.append(eol)
             output.append("Warning when not on Wifi? ").append(yesNoString(settings.warnOnMeteredNetwork.value)).append(eol)
-            output.append(eol)
 
+            output.append(eol)
             output.append("Work Manager Tasks").append(eol)
             val workInfos = WorkManager.getInstance(context)
                 .getWorkInfosByTagLiveData(DownloadManager.WORK_MANAGER_DOWNLOAD_TAG)
@@ -386,9 +367,9 @@ class Support @Inject constructor(
             }
             output.append("Database: " + Util.formattedBytes(context.getDatabasePath("pocketcasts").length(), context = context)).append(eol)
             try {
-                output.append("Temp directory: " + Util.formattedBytes(FileUtil.folderSize(fileStorage.getOrCreateEpisodesTempDir()), context)).append(eol)
-                output.append("Podcast directory: " + Util.formattedBytes(fileStorage.getOrCreateEpisodesDir()?.let(FileUtil::folderSize) ?: 0, context)).append(eol)
-                output.append("Network image directory: " + Util.formattedBytes(fileStorage.getOrCreateNetworkImagesDir()?.let(FileUtil::folderSize) ?: 0, context)).append(eol)
+                output.append("Temp directory: " + Util.formattedBytes(FileUtil.dirSize(fileStorage.getOrCreateEpisodesTempDir()), context)).append(eol)
+                output.append("Podcast directory: " + Util.formattedBytes(fileStorage.getOrCreateEpisodesDir()?.let(FileUtil::dirSize) ?: 0, context)).append(eol)
+                output.append("Network image directory: " + Util.formattedBytes(fileStorage.getOrCreateNetworkImagesDir()?.let(FileUtil::dirSize) ?: 0, context)).append(eol)
             } catch (e: Exception) {
                 Timber.e(e)
             }
@@ -420,13 +401,13 @@ class Support @Inject constructor(
                 output.append("Effects").append(eol)
                 output.append("Global Audio effects: ")
                     .append(" Playback speed: ").append(effects.playbackSpeed).append(eol)
-                    .append(" Silence removed: ").append(effects.trimMode).append(eol)
+                    .append(" Silence removed: ").append(effects.trimMode.toString().lowercase()).append(eol)
                     .append(" Volume boost: ").append(if (effects.isVolumeBoosted) "on" else "off").append(eol).append(eol)
 
                 output.append("Database").append(eol)
-                    .append(" ").append(podcastManager.countPodcasts()).append(" Podcasts ").append(eol)
+                    .append(" ").append(podcastManager.countPodcastsBlocking()).append(" Podcasts ").append(eol)
                     .append(" ").append(episodeManager.countEpisodes()).append(" Episodes ").append(eol)
-                    .append(" ").append(playlistManager.findAll().size).append(" Playlists ").append(eol)
+                    .append(" ").append(playlistManager.findAllBlocking().size).append(" Playlists ").append(eol)
                     .append(" ").append(queue.size).append(" Up Next ").append(eol).append(eol)
 
                 output.append(podcastsOutput.toString())
@@ -434,7 +415,7 @@ class Support @Inject constructor(
                 output.append("Filters").append(eol).append("-------").append(eol).append(eol)
 
                 try {
-                    val playlists = playlistManager.findAll()
+                    val playlists = playlistManager.findAllBlocking()
                     for (playlist in playlists) {
                         output.append(playlist.title).append(eol)
                         output.append("Auto Download? ").append(playlist.autoDownload).append(" Unmetered only? ").append(playlist.autoDownloadUnmeteredOnly).append(" Power only? ").append(playlist.autoDownloadPowerOnly).append(eol)
@@ -444,10 +425,14 @@ class Support @Inject constructor(
                     Timber.e(e)
                 }
 
+                output.append("Advance Settings").append(eol).append("-------------------").append(eol).append(eol)
+                output.append("Prioritize seek accuracy? ").append(settings.prioritizeSeekAccuracy.value).append(eol)
+                output.append(eol)
+
                 output.append("Episode Issues").append(eol).append("--------------").append(eol).append(eol)
 
                 try {
-                    val episodes = episodeManager.findEpisodesWhere("downloaded_error_details IS NOT NULL AND LENGTH(downloaded_error_details) > 0 LIMIT 100")
+                    val episodes = episodeManager.findEpisodesWhereBlocking("downloaded_error_details IS NOT NULL AND LENGTH(downloaded_error_details) > 0 LIMIT 100")
                     for (episode in episodes) {
                         output.append("Title: ").append(episode.title).append(eol)
                         output.append("Id: ").append(episode.uuid).append(eol)
@@ -490,4 +475,23 @@ class Support @Inject constructor(
             return ""
         }
     }
+}
+
+private fun AutoPlaySource.prettyPrint(
+    podcastManager: PodcastManager,
+    playlistManager: PlaylistManager,
+): String = when (this) {
+    is AutoPlaySource.PodcastOrFilter -> {
+        podcastManager.findPodcastByUuidBlocking(uuid)?.let { podcast ->
+            return "Podcast / ${podcast.title} / ${podcast.uuid}"
+        }
+        playlistManager.findByUuidBlocking(uuid)?.let { filter ->
+            return "Filter / ${filter.title} / ${filter.uuid}"
+        }
+        "Podcast or filter: $uuid"
+    }
+    is AutoPlaySource.Downloads -> "Downloads"
+    is AutoPlaySource.Files -> "Files"
+    is AutoPlaySource.Starred -> "Starred"
+    is AutoPlaySource.None -> "None"
 }

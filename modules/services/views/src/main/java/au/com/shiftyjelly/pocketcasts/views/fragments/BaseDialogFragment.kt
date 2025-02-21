@@ -2,15 +2,20 @@ package au.com.shiftyjelly.pocketcasts.views.fragments
 
 import android.app.Dialog
 import android.content.DialogInterface
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.View
 import android.widget.FrameLayout
+import androidx.annotation.ColorInt
+import androidx.core.graphics.ColorUtils
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.doOnLayout
 import androidx.navigation.NavHostController
-import au.com.shiftyjelly.pocketcasts.ui.extensions.getThemeColor
 import au.com.shiftyjelly.pocketcasts.ui.helper.FragmentHostListener
-import au.com.shiftyjelly.pocketcasts.ui.helper.StatusBarColor
+import au.com.shiftyjelly.pocketcasts.ui.helper.NavigationBarColor
+import au.com.shiftyjelly.pocketcasts.ui.helper.StatusBarIconColor
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
+import au.com.shiftyjelly.pocketcasts.views.extensions.setSystemWindowInsetToPadding
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -19,12 +24,13 @@ import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import au.com.shiftyjelly.pocketcasts.ui.R as UR
 
 @AndroidEntryPoint
 open class BaseDialogFragment : BottomSheetDialogFragment(), CoroutineScope {
 
-    open val statusBarColor: StatusBarColor? = StatusBarColor.Light
+    open val statusBarIconColor: StatusBarIconColor = StatusBarIconColor.Theme
+    open val navigationBarColor: NavigationBarColor = NavigationBarColor.Theme
+    open val includeNavigationBarPadding: Boolean = true
 
     private var isBeingDragged = false
     private val dismissCallback = object : BottomSheetBehavior.BottomSheetCallback() {
@@ -42,19 +48,21 @@ open class BaseDialogFragment : BottomSheetDialogFragment(), CoroutineScope {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        if (view.background == null) {
-            view.setBackgroundColor(view.context.getThemeColor(UR.attr.primary_ui_01))
-        }
+
         view.isClickable = true
 
-        val activity = activity
-        val statusBarColor = statusBarColor
-        if (activity != null && statusBarColor != null) {
-            theme.updateWindowStatusBar(window = activity.window, statusBarColor = statusBarColor, context = activity)
+        dialog?.window?.let { window ->
+            theme.updateWindowStatusBarIcons(window = window, statusBarIconColor = statusBarIconColor)
+            theme.updateWindowNavigationBarColor(window = window, navigationBarColor = navigationBarColor)
         }
 
         view.doOnLayout {
             ensureExpanded()
+        }
+
+        // add padding to the bottom of the dialog for the navigation bar
+        if (includeNavigationBarPadding) {
+            view.setSystemWindowInsetToPadding(bottom = true)
         }
 
         isBeingDragged = false
@@ -62,16 +70,15 @@ open class BaseDialogFragment : BottomSheetDialogFragment(), CoroutineScope {
     }
 
     private fun addDismissCallback() {
-        val dialog = dialog as BottomSheetDialog
-        (dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout?)?.let { bottomSheet ->
+        val dialog = dialog as? BottomSheetDialog
+        (dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as? FrameLayout?)?.let { bottomSheet ->
             val behavior = BottomSheetBehavior.from(bottomSheet)
             behavior.addBottomSheetCallback(dismissCallback)
         }
     }
 
     private fun removeDismissCallback() {
-        val dialog = dialog as BottomSheetDialog
-        (dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout?)?.let { bottomSheet ->
+        bottomSheetView()?.let { bottomSheet ->
             val behavior = BottomSheetBehavior.from(bottomSheet)
             behavior.removeBottomSheetCallback(dismissCallback)
         }
@@ -88,14 +95,15 @@ open class BaseDialogFragment : BottomSheetDialogFragment(), CoroutineScope {
         // as it causes the bottomsheet flicker to the expanded state
         if (isBeingDragged) return
 
-        val dialog = dialog as BottomSheetDialog
-        (dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout?)?.let { bottomSheet ->
+        bottomSheetView()?.let { bottomSheet ->
             val behavior = BottomSheetBehavior.from(bottomSheet)
             behavior.state = BottomSheetBehavior.STATE_EXPANDED
             behavior.peekHeight = BottomSheetBehavior.PEEK_HEIGHT_AUTO
             behavior.skipCollapsed = true
         }
     }
+
+    protected fun bottomSheetView() = dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
 
     protected fun addNavControllerToBackStack(loadNavController: () -> NavHostController?, initialRoute: String): Dialog {
         return object : BottomSheetDialog(requireContext(), getTheme()) {
@@ -110,5 +118,35 @@ open class BaseDialogFragment : BottomSheetDialogFragment(), CoroutineScope {
                 }
             }
         }
+    }
+
+    protected fun setDialogTint(
+        @ColorInt color: Int,
+    ) {
+        setStatusBarTint(color)
+        setNavigationBarTint(color)
+        setBackgroundTint(color)
+    }
+
+    protected fun setStatusBarTint(
+        @ColorInt color: Int,
+    ) {
+        requireActivity().window?.let { activityWindow ->
+            WindowInsetsControllerCompat(activityWindow, activityWindow.decorView).isAppearanceLightStatusBars = ColorUtils.calculateLuminance(color) > 0.5f
+        }
+    }
+
+    protected fun setNavigationBarTint(
+        @ColorInt color: Int,
+    ) {
+        requireDialog().window?.let { dialogWindow ->
+            WindowInsetsControllerCompat(dialogWindow, dialogWindow.decorView).isAppearanceLightNavigationBars = ColorUtils.calculateLuminance(color) > 0.5f
+        }
+    }
+
+    protected fun setBackgroundTint(
+        @ColorInt color: Int,
+    ) {
+        bottomSheetView()?.backgroundTintList = ColorStateList.valueOf(color)
     }
 }

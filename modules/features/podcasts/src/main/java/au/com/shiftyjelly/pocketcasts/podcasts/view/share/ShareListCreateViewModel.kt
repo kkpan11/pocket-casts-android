@@ -6,10 +6,10 @@ import androidx.core.content.ContextCompat.startActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
-import au.com.shiftyjelly.pocketcasts.servers.list.ListServerManager
+import au.com.shiftyjelly.pocketcasts.servers.list.ListServiceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,8 +20,8 @@ import timber.log.Timber
 @HiltViewModel
 class ShareListCreateViewModel @Inject constructor(
     private val podcastManager: PodcastManager,
-    private val listServerManager: ListServerManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val listServiceManager: ListServiceManager,
+    private val analyticsTracker: AnalyticsTracker,
 ) : ViewModel() {
     var isFragmentChangingConfigurations: Boolean = false
     data class State(
@@ -39,7 +39,7 @@ class ShareListCreateViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val podcasts = podcastManager.findPodcastsOrderByTitle()
-            mutableState.value = mutableState.value.copy(podcasts = podcasts)
+            mutableState.value = mutableState.value.copy(podcasts = podcasts.filter { it.canShare })
         }
     }
 
@@ -89,7 +89,7 @@ class ShareListCreateViewModel @Inject constructor(
         onBefore()
         viewModelScope.launch {
             try {
-                val url = listServerManager.createPodcastList(
+                val url = listServiceManager.createPodcastList(
                     title = title,
                     description = description,
                     podcasts = selectedPodcasts,
@@ -99,7 +99,7 @@ class ShareListCreateViewModel @Inject constructor(
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, url)
                 }
-                startActivity(context, Intent.createChooser(intent, label), null)
+                context.startActivity(Intent.createChooser(intent, label), null)
                 trackShareEvent(
                     AnalyticsEvent.SHARE_PODCASTS_LIST_PUBLISH_SUCCEEDED,
                     AnalyticsProp.countMap(selectedPodcasts.size),

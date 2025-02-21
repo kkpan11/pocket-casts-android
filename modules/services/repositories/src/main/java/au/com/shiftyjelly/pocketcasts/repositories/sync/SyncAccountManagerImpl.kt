@@ -4,6 +4,7 @@ import android.accounts.Account
 import android.accounts.AccountManager
 import android.accounts.AccountManagerFuture
 import android.accounts.NetworkErrorException
+import android.accounts.OnAccountsUpdateListener
 import android.content.Intent
 import android.os.Bundle
 import androidx.core.os.BundleCompat
@@ -11,12 +12,18 @@ import androidx.core.os.bundleOf
 import au.com.shiftyjelly.pocketcasts.preferences.AccessToken
 import au.com.shiftyjelly.pocketcasts.preferences.AccountConstants
 import au.com.shiftyjelly.pocketcasts.preferences.RefreshToken
+import au.com.shiftyjelly.pocketcasts.servers.sync.LoginIdentity
 import au.com.shiftyjelly.pocketcasts.servers.sync.TokenHandler
 import au.com.shiftyjelly.pocketcasts.servers.sync.exception.RefreshTokenExpiredException
+import au.com.shiftyjelly.pocketcasts.utils.Optional
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
+import io.reactivex.BackpressureStrategy
+import io.reactivex.Flowable
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 
 @Singleton
@@ -24,7 +31,6 @@ open class SyncAccountManagerImpl @Inject constructor(
     private val tokenErrorNotification: TokenErrorNotification,
     private val accountManager: AccountManager,
 ) : TokenHandler, SyncAccountManager {
-
     override fun getAccount(): Account? {
         return accountManager.getAccountsByType(AccountConstants.ACCOUNT_TYPE).firstOrNull()
     }
@@ -35,6 +41,38 @@ open class SyncAccountManagerImpl @Inject constructor(
 
     override fun getEmail(): String? {
         return getAccount()?.name
+    }
+
+    override fun emailFlow() = callbackFlow<String?> {
+        val listener = object : OnAccountsUpdateListener {
+            override fun onAccountsUpdated(accounts: Array<out Account>?) {
+                val email = accounts?.find { it.type == AccountConstants.ACCOUNT_TYPE }?.name
+                trySend(email)
+            }
+        }
+        trySend(getEmail())
+        accountManager.addOnAccountsUpdatedListener(listener, null, true)
+        awaitClose {
+            accountManager.removeOnAccountsUpdatedListener(listener)
+        }
+    }
+
+    override fun emailFlowable(): Flowable<Optional<String>> {
+        return Flowable.create({ emitter ->
+            try {
+                val listener = OnAccountsUpdateListener { accounts ->
+                    val email = accounts?.find { it.type == AccountConstants.ACCOUNT_TYPE }?.name
+                    emitter.onNext(Optional.of(email))
+                }
+                emitter.onNext(Optional.of(getEmail()))
+                accountManager.addOnAccountsUpdatedListener(listener, null, true)
+                emitter.setCancellable {
+                    accountManager.removeOnAccountsUpdatedListener(listener)
+                }
+            } catch (e: Exception) {
+                emitter.tryOnError(e)
+            }
+        }, BackpressureStrategy.BUFFER)
     }
 
     override fun getUuid(): String? =

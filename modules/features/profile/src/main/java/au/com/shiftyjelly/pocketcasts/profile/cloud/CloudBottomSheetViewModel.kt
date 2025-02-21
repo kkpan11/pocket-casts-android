@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.EpisodeAnalytics
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.UserEpisode
@@ -35,7 +35,7 @@ class CloudBottomSheetViewModel @Inject constructor(
     private val episodeManager: EpisodeManager,
     private val downloadManager: DownloadManager,
     private val podcastManager: PodcastManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     private val episodeAnalytics: EpisodeAnalytics,
     @ApplicationScope private val applicationScope: CoroutineScope,
     userManager: UserManager,
@@ -47,7 +47,7 @@ class CloudBottomSheetViewModel @Inject constructor(
     fun setup(uuid: String) {
         val isPlayingFlowable = playbackManager.playbackStateRelay.filter { it.episodeUuid == uuid }.map { it.isPlaying }.startWith(false).toFlowable(BackpressureStrategy.LATEST)
         val inUpNextFlowable = playbackManager.upNextQueue.changesObservable.containsUuid(uuid).toFlowable(BackpressureStrategy.LATEST)
-        val episodeFlowable = userEpisodeManager.observeEpisodeRx(uuid)
+        val episodeFlowable = userEpisodeManager.episodeRxFlowable(uuid)
         val combined = Flowables.combineLatest(episodeFlowable, inUpNextFlowable, isPlayingFlowable) { episode, inUpNext, isPlaying ->
             BottomSheetState(episode, inUpNext, isPlaying)
         }
@@ -100,7 +100,7 @@ class CloudBottomSheetViewModel @Inject constructor(
 
     fun download(episode: UserEpisode) {
         viewModelScope.launch(Dispatchers.Default) {
-            DownloadHelper.manuallyDownloadEpisodeNow(episode, "cloud bottom sheet", downloadManager, episodeManager)
+            DownloadHelper.manuallyDownloadEpisodeNow(episode, "cloud bottom sheet", downloadManager, episodeManager, source = source)
         }
     }
 
@@ -125,7 +125,7 @@ class CloudBottomSheetViewModel @Inject constructor(
 
     fun markAsPlayed(episode: UserEpisode) {
         viewModelScope.launch(Dispatchers.Default) {
-            episodeManager.markAsPlayed(episode, playbackManager, podcastManager)
+            episodeManager.markAsPlayedBlocking(episode, playbackManager, podcastManager)
             episodeAnalytics.trackEvent(AnalyticsEvent.EPISODE_MARKED_AS_PLAYED, source, episode.uuid)
             trackOptionTapped(MARK_PLAYED)
         }
@@ -133,7 +133,7 @@ class CloudBottomSheetViewModel @Inject constructor(
 
     fun markAsUnplayed(episode: UserEpisode) {
         viewModelScope.launch(Dispatchers.Default) {
-            episodeManager.markAsNotPlayed(episode)
+            episodeManager.markAsNotPlayedBlocking(episode)
             episodeAnalytics.trackEvent(AnalyticsEvent.EPISODE_MARKED_AS_UNPLAYED, source, episode.uuid)
             trackOptionTapped(MARK_UNPLAYED)
         }

@@ -2,14 +2,19 @@ package au.com.shiftyjelly.pocketcasts.settings
 
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.AppBarDefaults
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.icons.Icons
@@ -22,8 +27,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -31,37 +36,47 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
 import au.com.shiftyjelly.pocketcasts.compose.bars.ThemedTopAppBar
 import au.com.shiftyjelly.pocketcasts.compose.components.TextP60
+import au.com.shiftyjelly.pocketcasts.compose.extensions.contentWithoutConsumedInsets
 import au.com.shiftyjelly.pocketcasts.compose.loading.LoadingView
 import au.com.shiftyjelly.pocketcasts.compose.preview.ThemePreviewParameterProvider
+import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.settings.viewmodel.LogsViewModel
 import au.com.shiftyjelly.pocketcasts.ui.helper.FragmentHostListener
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import au.com.shiftyjelly.pocketcasts.utils.Util
+import au.com.shiftyjelly.pocketcasts.utils.extensions.pxToDp
 import au.com.shiftyjelly.pocketcasts.views.fragments.BaseFragment
 import au.com.shiftyjelly.pocketcasts.views.helper.UiUtil
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.launch
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
 @AndroidEntryPoint
 class LogsFragment : BaseFragment() {
+    @Inject lateinit var settings: Settings
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
-        ComposeView(requireContext()).apply {
-            setContent {
-                UiUtil.hideKeyboard(LocalView.current)
-                AppThemeWithBackground(theme.activeTheme) {
-                    LogsPage(
-                        onBackPressed = ::closeFragment,
-                    )
-                }
-            }
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ) = contentWithoutConsumedInsets {
+        UiUtil.hideKeyboard(LocalView.current)
+        AppThemeWithBackground(theme.activeTheme) {
+            val bottomInset = settings.bottomInset.collectAsStateWithLifecycle(initialValue = 0)
+            LogsPage(
+                bottomInset = bottomInset.value.pxToDp(LocalContext.current).dp,
+                onBackPressed = ::closeFragment,
+            )
         }
+    }
 
     private fun closeFragment() {
         (activity as? FragmentHostListener)?.closeModal(this)
@@ -69,12 +84,15 @@ class LogsFragment : BaseFragment() {
 }
 
 @Composable
-private fun LogsPage(
+fun LogsPage(
+    bottomInset: Dp,
+    appBarInsets: WindowInsets = AppBarDefaults.topAppBarWindowInsets,
     onBackPressed: () -> Unit,
 ) {
     val viewModel = hiltViewModel<LogsViewModel>()
     val state by viewModel.state.collectAsState()
     val logs = state.logs
+    val logLines = state.logLines
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
@@ -83,7 +101,9 @@ private fun LogsPage(
         onCopyToClipboard = { logs?.let { clipboardManager.setText(AnnotatedString(it)) } },
         onShareLogs = { viewModel.shareLogs(context) },
         includeAppBar = !Util.isAutomotive(context),
-        logs = logs,
+        logLines = logLines,
+        bottomInset = bottomInset,
+        appBarInsets = appBarInsets,
     )
 }
 
@@ -92,48 +112,72 @@ private fun LogsContent(
     onBackPressed: () -> Unit,
     onCopyToClipboard: () -> Unit,
     onShareLogs: () -> Unit,
-    logs: String?,
+    logLines: List<String>,
     includeAppBar: Boolean,
+    bottomInset: Dp,
+    appBarInsets: WindowInsets,
 ) {
-    val logScrollState = rememberScrollState(0)
+    val logScrollState = rememberLazyListState()
     Column {
         if (includeAppBar) {
             val coroutineScope = rememberCoroutineScope()
             AppBarWithShare(
+                appBarInsets = appBarInsets,
+                logsAvailable = logLines.isNotEmpty(),
                 onBackPressed = onBackPressed,
                 onCopyToClipboard = onCopyToClipboard,
                 onShareLogs = onShareLogs,
                 onScrollToTop = {
-                    coroutineScope.launch {
-                        logScrollState.animateScrollTo(0)
+                    if (logLines.isNotEmpty()) {
+                        coroutineScope.launch {
+                            logScrollState.animateScrollToItem(0)
+                        }
                     }
                 },
                 onScrollToBottom = {
-                    coroutineScope.launch {
-                        logScrollState.animateScrollTo(Int.MAX_VALUE)
+                    if (logLines.isNotEmpty()) {
+                        coroutineScope.launch {
+                            logScrollState.animateScrollToItem(Int.MAX_VALUE)
+                        }
                     }
                 },
-                logsAvailable = logs != null,
             )
         }
-        Column(
+        Box(
             modifier = Modifier
-                .verticalScroll(logScrollState)
-                .padding(16.dp)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 16.dp),
         ) {
-            if (logs == null) {
-                LoadingView()
+            if (logLines.isEmpty()) {
+                LoadingView(
+                    modifier = Modifier.align(Alignment.Center),
+                )
             } else {
                 SelectionContainer {
-                    TextP60(logs)
+                    LazyColumn(
+                        state = logScrollState,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        item {
+                            Spacer(modifier = Modifier.size(16.dp))
+                        }
+                        items(logLines) { log ->
+                            TextP60(log)
+                        }
+                        item {
+                            Spacer(modifier = Modifier.size(bottomInset))
+                        }
+                    }
                 }
             }
         }
     }
     // scroll to the end to show the latest logs
-    LaunchedEffect(logs) {
-        logScrollState.scrollTo(logScrollState.maxValue)
+    LaunchedEffect(logLines) {
+        if (logLines.isNotEmpty()) {
+            logScrollState.scrollToItem(Int.MAX_VALUE)
+        }
     }
 }
 
@@ -145,10 +189,12 @@ private fun AppBarWithShare(
     onScrollToTop: () -> Unit,
     onScrollToBottom: () -> Unit,
     logsAvailable: Boolean,
+    appBarInsets: WindowInsets,
     modifier: Modifier = Modifier,
 ) {
     ThemedTopAppBar(
         title = stringResource(LR.string.settings_logs),
+        windowInsets = appBarInsets,
         onNavigationClick = onBackPressed,
         actions = {
             IconButton(
@@ -200,8 +246,14 @@ private fun LogsContentPreview(@PreviewParameter(ThemePreviewParameterProvider::
             onBackPressed = {},
             onCopyToClipboard = {},
             onShareLogs = {},
-            logs = "This is a preview",
+            logLines = listOf(
+                "This is a preview",
+                "Of some logs",
+                "In our app",
+            ),
             includeAppBar = true,
+            bottomInset = 0.dp,
+            appBarInsets = AppBarDefaults.topAppBarWindowInsets,
         )
     }
 }
@@ -214,8 +266,10 @@ private fun LogsContentLoadingPreview(@PreviewParameter(ThemePreviewParameterPro
             onBackPressed = {},
             onCopyToClipboard = {},
             onShareLogs = {},
-            logs = null,
+            logLines = emptyList(),
             includeAppBar = true,
+            bottomInset = 0.dp,
+            appBarInsets = AppBarDefaults.topAppBarWindowInsets,
         )
     }
 }

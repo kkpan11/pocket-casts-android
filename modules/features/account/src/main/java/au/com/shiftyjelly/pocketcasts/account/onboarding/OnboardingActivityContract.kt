@@ -20,6 +20,8 @@ class OnboardingActivityContract : ActivityResultContract<Intent, OnboardingActi
     enum class OnboardingFinish {
         Done,
         DoneGoToDiscover,
+        DoneShowPlusPromotion,
+        DoneShowWelcomeInReferralFlow,
     }
 
     companion object {

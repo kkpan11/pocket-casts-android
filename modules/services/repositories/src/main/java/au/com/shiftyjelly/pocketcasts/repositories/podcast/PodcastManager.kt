@@ -1,10 +1,14 @@
 package au.com.shiftyjelly.pocketcasts.repositories.podcast
 
-import au.com.shiftyjelly.pocketcasts.models.db.helper.TopPodcast
+import au.com.shiftyjelly.pocketcasts.models.entity.CuratedPodcast
 import au.com.shiftyjelly.pocketcasts.models.entity.Folder
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
+import au.com.shiftyjelly.pocketcasts.models.entity.SuggestedFolderDetails
 import au.com.shiftyjelly.pocketcasts.models.entity.UserEpisode
+import au.com.shiftyjelly.pocketcasts.models.to.AutoArchiveAfterPlaying
+import au.com.shiftyjelly.pocketcasts.models.to.AutoArchiveInactive
+import au.com.shiftyjelly.pocketcasts.models.to.AutoArchiveLimit
 import au.com.shiftyjelly.pocketcasts.models.to.PlaybackEffects
 import au.com.shiftyjelly.pocketcasts.models.to.PodcastGrouping
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodeStatusEnum
@@ -15,131 +19,131 @@ import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import io.reactivex.Flowable
 import io.reactivex.Maybe
 import io.reactivex.Single
-import java.util.Date
 import kotlinx.coroutines.flow.Flow
 
 interface PodcastManager {
 
     /** Find methods  */
-    fun searchPodcastByTitle(title: String): Podcast?
-    fun findPodcastByUuid(uuid: String): Podcast?
-    suspend fun findPodcastByUuidSuspend(uuid: String): Podcast?
-    fun findPodcastByUuidRx(uuid: String): Maybe<Podcast>
-    fun observePodcastByUuid(uuid: String): Flowable<Podcast>
-    fun observePodcastSubscriptions(): Flowable<List<String>>
+    fun searchPodcastByTitleBlocking(title: String): Podcast?
+    fun findPodcastByUuidBlocking(uuid: String): Podcast?
+    suspend fun findPodcastByUuid(uuid: String): Podcast?
+    fun findPodcastByUuidRxMaybe(uuid: String): Maybe<Podcast>
+    fun podcastByUuidRxFlowable(uuid: String): Flowable<Podcast>
+    fun podcastByUuidFlow(uuid: String): Flow<Podcast>
+    fun podcastByEpisodeUuidFlow(uuid: String): Flow<Podcast>
+    fun podcastSubscriptionsRxFlowable(): Flowable<List<String>>
 
-    fun findSubscribed(): List<Podcast>
-    fun findSubscribedRx(): Single<List<Podcast>>
+    fun findSubscribedBlocking(): List<Podcast>
+    fun findSubscribedRxSingle(): Single<List<Podcast>>
     fun findSubscribedFlow(): Flow<List<Podcast>>
     suspend fun findSubscribedSorted(): List<Podcast>
     suspend fun findSubscribedNoOrder(): List<Podcast>
-    fun findByUuids(uuids: Collection<String>): List<Podcast>
     suspend fun findPodcastsInFolder(folderUuid: String): List<Podcast>
-    fun findPodcastsInFolderSingle(folderUuid: String): Single<List<Podcast>>
+    fun findPodcastsInFolderRxSingle(folderUuid: String): Single<List<Podcast>>
     suspend fun findPodcastsNotInFolder(): List<Podcast>
-    fun observePodcastsInFolderOrderByUserChoice(folder: Folder): Flowable<List<Podcast>>
+    fun podcastsInFolderOrderByUserChoiceRxFlowable(folder: Folder): Flowable<List<Podcast>>
     suspend fun findSubscribedUuids(): List<String>
 
-    fun observePodcastsOrderByLatestEpisode(): Flowable<List<Podcast>>
-    fun observeSubscribed(): Flowable<List<Podcast>>
+    fun podcastsOrderByLatestEpisodeRxFlowable(): Flowable<List<Podcast>>
+    fun subscribedRxFlowable(): Flowable<List<Podcast>>
     suspend fun findPodcastsOrderByTitle(): List<Podcast>
-    fun findPodcastsToSync(): List<Podcast>
+    fun findPodcastsToSyncBlocking(): List<Podcast>
     suspend fun findPodcastsOrderByLatestEpisode(orderAsc: Boolean): List<Podcast>
     suspend fun findFolderPodcastsOrderByLatestEpisode(folderUuid: String): List<Podcast>
 
-    fun findPodcastsAutodownload(): List<Podcast>
+    fun findPodcastsAutodownloadBlocking(): List<Podcast>
 
-    fun exists(podcastUuid: String): Boolean
+    fun episodeCountByPodcatUuidFlow(uuid: String): Flow<Int>
 
     /** Add methods  */
-    fun subscribeToPodcast(podcastUuid: String, sync: Boolean)
+    fun subscribeToPodcast(podcastUuid: String, sync: Boolean, shouldAutoDownload: Boolean = true)
 
-    fun subscribeToPodcastRx(podcastUuid: String, sync: Boolean = false): Single<Podcast>
-    fun findOrDownloadPodcastRx(podcastUuid: String): Single<Podcast>
+    fun subscribeToPodcastRxSingle(podcastUuid: String, sync: Boolean = false, shouldAutoDownload: Boolean = true): Single<Podcast>
+    fun findOrDownloadPodcastRxSingle(podcastUuid: String): Single<Podcast>
     fun isSubscribingToPodcasts(): Boolean
-    fun getSubscribedPodcastUuids(): Single<List<String>>
+    fun getSubscribedPodcastUuidsRxSingle(): Single<List<String>>
     fun isSubscribingToPodcast(podcastUuid: String): Boolean
-    fun addPodcast(podcastUuid: String, sync: Boolean, subscribed: Boolean): Single<Podcast>
+    fun addPodcastRxSingle(podcastUuid: String, sync: Boolean, subscribed: Boolean, shouldAutoDownload: Boolean): Single<Podcast>
 
-    fun addFolderPodcast(podcast: Podcast)
+    suspend fun replaceCuratedPodcasts(podcasts: List<CuratedPodcast>)
 
     /** Update methods  */
-    fun updatePodcast(podcast: Podcast)
+    fun updatePodcastBlocking(podcast: Podcast)
 
-    fun updateAllAutoDownloadStatus(autoDownloadStatus: Int)
+    suspend fun updateAllAutoDownloadStatus(autoDownloadStatus: Int)
     suspend fun updateAllShowNotifications(showNotifications: Boolean)
-    fun updateAutoDownloadStatus(podcast: Podcast, autoDownloadStatus: Int)
+    fun updateAutoDownloadStatusBlocking(podcast: Podcast, autoDownloadStatus: Int)
     suspend fun updateAutoAddToUpNext(podcast: Podcast, autoAddToUpNext: Podcast.AutoAddUpNext)
     suspend fun updateAutoAddToUpNexts(podcastUuids: List<String>, autoAddToUpNext: Podcast.AutoAddUpNext)
     suspend fun updateAutoAddToUpNextsIf(podcastUuids: List<String>, newValue: Podcast.AutoAddUpNext, onlyIfValue: Podcast.AutoAddUpNext)
-    fun updateExcludeFromAutoArchive(podcast: Podcast, excludeFromAutoArchive: Boolean)
-    fun updateOverrideGlobalEffects(podcast: Podcast, override: Boolean)
-    fun updateTrimMode(podcast: Podcast, trimMode: TrimMode)
-    fun updateVolumeBoosted(podcast: Podcast, override: Boolean)
-    fun updatePlaybackSpeed(podcast: Podcast, speed: Double)
-    fun updateEffects(podcast: Podcast, effects: PlaybackEffects)
-    fun updateEpisodesSortType(podcast: Podcast, episodesSortType: EpisodesSortType)
-    fun updateShowNotifications(podcast: Podcast, show: Boolean)
+    fun updateOverrideGlobalEffectsBlocking(podcast: Podcast, override: Boolean)
+    suspend fun updateTrimModeBlocking(podcast: Podcast, trimMode: TrimMode)
+    fun updateVolumeBoostedBlocking(podcast: Podcast, override: Boolean)
+    fun updatePlaybackSpeedBlocking(podcast: Podcast, speed: Double)
+    fun updateEffectsBlocking(podcast: Podcast, effects: PlaybackEffects)
+    fun updateEpisodesSortTypeBlocking(podcast: Podcast, episodesSortType: EpisodesSortType)
+    fun updateShowNotificationsBlocking(podcast: Podcast, show: Boolean)
     suspend fun updatePodcastPositions(podcasts: List<Podcast>)
-    fun updateSubscribed(podcast: Podcast, subscribed: Boolean)
     suspend fun updateRefreshAvailable(podcastUuid: String, refreshAvailable: Boolean)
     suspend fun updateStartFromInSec(podcast: Podcast, autoStartFrom: Int)
-    fun updateColorLastDownloaded(podcast: Podcast, lastDownloaded: Long)
-    fun updateOverrideGobalSettings(podcast: Podcast, override: Boolean)
-    fun updateEpisodesToKeep(podcast: Podcast, episodeToKeep: Int)
-    fun updateColors(podcastUuid: String, background: Int, tintForLightBg: Int, tintForDarkBg: Int, fabForLightBg: Int, fabForDarkBg: Int, linkForLightBg: Int, linkForDarkBg: Int, colorLastDownloaded: Long)
-    fun updateLatestEpisode(podcast: Podcast, latestEpisode: PodcastEpisode)
-    fun updateGrouping(podcast: Podcast, grouping: PodcastGrouping)
+    fun updateColorsBlocking(podcastUuid: String, background: Int, tintForLightBg: Int, tintForDarkBg: Int, fabForLightBg: Int, fabForDarkBg: Int, linkForLightBg: Int, linkForDarkBg: Int, colorLastDownloaded: Long)
+    fun updateLatestEpisodeBlocking(podcast: Podcast, latestEpisode: PodcastEpisode)
+    fun updateGroupingBlocking(podcast: Podcast, grouping: PodcastGrouping)
     suspend fun updateSkipLastInSec(podcast: Podcast, skipLast: Int)
     suspend fun updateShowArchived(podcast: Podcast, showArchived: Boolean)
     suspend fun updateAllShowArchived(showArchived: Boolean)
     suspend fun updateFolderUuid(folderUuid: String?, podcastUuids: List<String>)
-    suspend fun updateSyncData(podcast: Podcast, startFromSecs: Int, skipLastSecs: Int, folderUuid: String?, sortPosition: Int, addedDate: Date)
+    suspend fun updateFoldersUuid(folders: List<SuggestedFolderDetails>)
 
-    fun markPodcastAsSynced(podcast: Podcast)
-    fun markPodcastAsNotSynced(podcast: Podcast)
-    fun markPodcastUuidAsNotSynced(podcastUuid: String)
-    fun markAllPodcastsSynced()
+    fun markPodcastUuidAsNotSyncedBlocking(podcastUuid: String)
+    suspend fun markAllPodcastsSynced()
     suspend fun markAllPodcastsUnsynced()
-    fun markAsSubscribed(podcast: Podcast, subscribed: Boolean)
 
-    fun clearAllDownloadErrors()
+    fun clearAllDownloadErrorsBlocking()
 
     /** Remove methods  */
-    fun checkForUnusedPodcasts(playbackManager: PlaybackManager)
-    fun deletePodcastIfUnused(podcast: Podcast, playbackManager: PlaybackManager): Boolean
+    fun checkForUnusedPodcastsBlocking(playbackManager: PlaybackManager)
+    fun deletePodcastIfUnusedBlocking(podcast: Podcast, playbackManager: PlaybackManager): Boolean
     suspend fun deleteAllPodcasts()
-    fun unsubscribe(podcastUuid: String, playbackManager: PlaybackManager)
+    fun unsubscribeBlocking(podcastUuid: String, playbackManager: PlaybackManager)
     fun unsubscribeAsync(podcastUuid: String, playbackManager: PlaybackManager)
 
     /** Utility methods  */
-    fun countPodcasts(): Int
+    fun countPodcastsBlocking(): Int
     suspend fun countSubscribed(): Int
-    fun countSubscribedRx(): Single<Int>
-    fun observeCountSubscribed(): Flowable<Int>
-    fun countDownloadStatus(downloadStatus: Int): Int
-    fun countDownloadStatusRx(downloadStatus: Int): Single<Int>
-    fun countNotificationsOn(): Int
-    fun countNotificationsOnRx(): Single<Int>
+    fun countSubscribedRxSingle(): Single<Int>
+    fun countSubscribedRxFlowable(): Flowable<Int>
+    fun countDownloadStatusBlocking(downloadStatus: Int): Int
+    suspend fun hasEpisodesWithAutoDownloadStatus(downloadStatus: Int): Boolean
+    fun countDownloadStatusRxSingle(downloadStatus: Int): Single<Int>
+    fun countNotificationsOnBlocking(): Int
 
     fun refreshPodcastsIfRequired(fromLog: String)
     fun refreshPodcasts(fromLog: String)
     suspend fun refreshPodcastsAfterSignIn()
-    fun refreshPodcastInBackground(existingPodcast: Podcast, playbackManager: PlaybackManager)
+    suspend fun refreshPodcast(existingPodcast: Podcast, playbackManager: PlaybackManager)
     fun reloadFoldersFromServer()
 
-    fun checkForEpisodesToDownload(episodeUuidsAdded: List<String>, downloadManager: DownloadManager)
+    fun checkForEpisodesToDownloadBlocking(episodeUuidsAdded: List<String>, downloadManager: DownloadManager)
 
-    fun countEpisodesInPodcastWithStatus(podcastUuid: String, episodeStatus: EpisodeStatusEnum): Int
-    fun updateGroupingForAll(grouping: PodcastGrouping)
+    fun countEpisodesInPodcastWithStatusBlocking(podcastUuid: String, episodeStatus: EpisodeStatusEnum): Int
+    fun updateGroupingForAllBlocking(grouping: PodcastGrouping)
 
     fun buildUserEpisodePodcast(episode: UserEpisode): Podcast
-    fun observeAutoAddToUpNextPodcasts(): Flowable<List<Podcast>>
+    fun autoAddToUpNextPodcastsRxFlowable(): Flowable<List<Podcast>>
     suspend fun findAutoAddToUpNextPodcasts(): List<Podcast>
 
-    suspend fun refreshPodcastFeed(podcastUuid: String): Boolean
-
-    suspend fun findTopPodcasts(fromEpochMs: Long, toEpochMs: Long, limit: Int): List<TopPodcast>
+    suspend fun refreshPodcastFeed(podcast: Podcast): Boolean
 
     suspend fun findRandomPodcasts(limit: Int): List<Podcast>
+
+    suspend fun countPlayedEpisodes(podcastUuid: String): Int
+    suspend fun countEpisodesByPodcast(podcastUuid: String): Int
+
+    suspend fun updateArchiveSettings(uuid: String, enable: Boolean, afterPlaying: AutoArchiveAfterPlaying, inactive: AutoArchiveInactive)
+    suspend fun updateArchiveAfterPlaying(uuid: String, value: AutoArchiveAfterPlaying)
+    suspend fun updateArchiveAfterInactive(uuid: String, value: AutoArchiveInactive)
+    suspend fun updateArchiveEpisodeLimit(uuid: String, value: AutoArchiveLimit)
+
+    fun updatePodcastLatestEpisodeBlocking(podcast: Podcast)
 }

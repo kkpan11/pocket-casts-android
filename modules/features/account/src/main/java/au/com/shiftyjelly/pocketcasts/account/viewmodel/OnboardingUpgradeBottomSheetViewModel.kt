@@ -1,6 +1,6 @@
 package au.com.shiftyjelly.pocketcasts.account.viewmodel
 
-import android.app.Activity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,10 +9,11 @@ import au.com.shiftyjelly.pocketcasts.account.viewmodel.OnboardingUpgradeBottomS
 import au.com.shiftyjelly.pocketcasts.account.viewmodel.OnboardingUpgradeBottomSheetState.Loading
 import au.com.shiftyjelly.pocketcasts.account.viewmodel.OnboardingUpgradeBottomSheetState.NoSubscriptions
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
+import au.com.shiftyjelly.pocketcasts.models.type.OfferSubscriptionPricingPhase
 import au.com.shiftyjelly.pocketcasts.models.type.Subscription
 import au.com.shiftyjelly.pocketcasts.models.type.SubscriptionMapper
-import au.com.shiftyjelly.pocketcasts.models.type.TrialSubscriptionPricingPhase
+import au.com.shiftyjelly.pocketcasts.models.type.SubscriptionTier
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.ProductDetailsState
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.PurchaseEvent
@@ -36,8 +37,9 @@ import timber.log.Timber
 @HiltViewModel
 class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
     private val subscriptionManager: SubscriptionManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     private val settings: Settings,
+    private val subscriptionMapper: SubscriptionMapper,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -46,9 +48,9 @@ class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
     private val _state = MutableStateFlow<OnboardingUpgradeBottomSheetState>(Loading)
     val state: StateFlow<OnboardingUpgradeBottomSheetState> = _state
         .map {
-            // If selected subscription has trialPricingPhase, update mostRecentlySelectedTrialPhase
-            (it as? Loaded)?.selectedSubscription?.trialPricingPhase?.let { trialPhase ->
-                it.copy(mostRecentlySelectedTrialPhase = trialPhase)
+            // If selected subscription has offerPricingPhase, update mostRecentlySelectedOfferPhase
+            (it as? Loaded)?.selectedSubscription?.offerPricingPhase?.let { offerPhase ->
+                it.copy(mostRecentlySelectedOfferPhase = offerPhase)
             } ?: it
         }.stateIn(viewModelScope, SharingStarted.Lazily, _state.value)
 
@@ -60,17 +62,20 @@ class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
                 .stateIn(viewModelScope)
                 .collect { productDetails ->
                     val subscriptions = when (productDetails) {
-                        is ProductDetailsState.Error -> null
+                        is ProductDetailsState.Failure -> null
                         is ProductDetailsState.Loaded -> productDetails.productDetails.mapNotNull { productDetailsState ->
-                            Subscription.fromProductDetails(
+                            subscriptionMapper.mapFromProductDetails(
                                 productDetails = productDetailsState,
-                                isFreeTrialEligible = subscriptionManager.isFreeTrialEligible(
-                                    SubscriptionMapper.mapProductIdToTier(productDetailsState.productId),
+                                isOfferEligible = subscriptionManager.isOfferEligible(
+                                    SubscriptionTier.fromProductId(productDetailsState.productId),
                                 ),
                             )
                         }
                     } ?: emptyList()
-                    _state.update { stateFromList(subscriptions) }
+                    _state.update {
+                        val filteredOffer = Subscription.filterOffers(subscriptions)
+                        stateFromList(filteredOffer)
+                    }
                 }
         }
     }
@@ -96,8 +101,9 @@ class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
     }
 
     fun onClickSubscribe(
-        activity: Activity,
+        activity: AppCompatActivity,
         flow: OnboardingFlow,
+        source: OnboardingUpgradeSource,
         onComplete: () -> Unit,
     ) {
         (state.value as? Loaded)?.let { loadedState ->
@@ -106,7 +112,11 @@ class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
 
             analyticsTracker.track(
                 AnalyticsEvent.SELECT_PAYMENT_FREQUENCY_NEXT_BUTTON_TAPPED,
-                mapOf(flowKey to flow.analyticsValue, selectedSubscriptionKey to subscription.productDetails.productId),
+                mapOf(
+                    flowKey to flow.analyticsValue,
+                    sourceKey to source.analyticsValue,
+                    selectedSubscriptionKey to subscription.productDetails.productId,
+                ),
             )
 
             viewModelScope.launch {
@@ -147,11 +157,16 @@ class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
         val lastSelectedFrequency = settings.getLastSelectedSubscriptionFrequency().takeIf { source in listOf(OnboardingUpgradeSource.LOGIN, OnboardingUpgradeSource.PROFILE) }
 
         val fromProfile = source == OnboardingUpgradeSource.PROFILE
-        val defaultSelected = subscriptionManager.getDefaultSubscription(
-            subscriptions = subscriptions,
-            tier = lastSelectedTier,
-            frequency = lastSelectedFrequency,
-        )
+        val defaultSelected = if (source == OnboardingUpgradeSource.LOGIN) {
+            subscriptionManager.getDefaultSubscription(
+                subscriptions = subscriptions,
+                tier = lastSelectedTier,
+                frequency = lastSelectedFrequency,
+            )
+        } else {
+            subscriptionManager.getDefaultSubscription(subscriptions = subscriptions, tier = lastSelectedTier)
+        }
+
         return if (defaultSelected == null) {
             NoSubscriptions
         } else {
@@ -163,23 +178,36 @@ class OnboardingUpgradeBottomSheetViewModel @Inject constructor(
         }
     }
 
-    fun onSelectPaymentFrequencyShown(flow: OnboardingFlow) {
+    fun onSelectPaymentFrequencyShown(
+        flow: OnboardingFlow,
+        source: OnboardingUpgradeSource,
+    ) {
         analyticsTracker.track(
             AnalyticsEvent.SELECT_PAYMENT_FREQUENCY_SHOWN,
-            mapOf(flowKey to flow.analyticsValue),
+            mapOf(
+                flowKey to flow.analyticsValue,
+                sourceKey to source.analyticsValue,
+            ),
         )
     }
 
-    fun onSelectPaymentFrequencyDismissed(flow: OnboardingFlow) {
+    fun onSelectPaymentFrequencyDismissed(
+        flow: OnboardingFlow,
+        source: OnboardingUpgradeSource,
+    ) {
         analyticsTracker.track(
             AnalyticsEvent.SELECT_PAYMENT_FREQUENCY_DISMISSED,
-            mapOf(flowKey to flow.analyticsValue),
+            mapOf(
+                flowKey to flow.analyticsValue,
+                sourceKey to source.analyticsValue,
+            ),
         )
     }
 
     companion object {
         const val flowKey = "flow"
         const val selectedSubscriptionKey = "product"
+        const val sourceKey = "source"
     }
 }
 
@@ -189,12 +217,11 @@ sealed class OnboardingUpgradeBottomSheetState {
     data class Loaded constructor(
         val subscriptions: List<Subscription>, // This list should never be empty
         val selectedSubscription: Subscription,
-        // Need to retain the most recently selected trial phase so that information is still available as
-        // it animates out of view after a subscription without a trial phase is selected
-        val mostRecentlySelectedTrialPhase: TrialSubscriptionPricingPhase? = null,
+        // Need to retain the most recently selected offer phase so that information is still available as
+        // it animates out of view after a subscription without a offer phase is selected
+        val mostRecentlySelectedOfferPhase: OfferSubscriptionPricingPhase? = null,
         val purchaseFailed: Boolean = false,
     ) : OnboardingUpgradeBottomSheetState() {
-        val showTrialInfo = selectedSubscription.trialPricingPhase != null
         val upgradeButton = selectedSubscription.toUpgradeButton()
         init {
             if (subscriptions.isEmpty()) {

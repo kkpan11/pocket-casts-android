@@ -1,5 +1,6 @@
 package au.com.shiftyjelly.pocketcasts.repositories.playback.auto
 
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -10,9 +11,10 @@ import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaDescriptionCompat.EXTRA_DOWNLOAD_STATUS
 import android.support.v4.media.MediaDescriptionCompat.STATUS_DOWNLOADED
 import android.support.v4.media.MediaDescriptionCompat.STATUS_NOT_DOWNLOADED
-import android.util.Log
 import androidx.annotation.DrawableRes
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.os.bundleOf
+import androidx.media.utils.MediaConstants.DESCRIPTION_EXTRAS_KEY_COMPLETION_PERCENTAGE
 import androidx.media.utils.MediaConstants.DESCRIPTION_EXTRAS_KEY_COMPLETION_STATUS
 import androidx.media.utils.MediaConstants.DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED
 import androidx.media.utils.MediaConstants.DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_NOT_PLAYED
@@ -30,15 +32,12 @@ import au.com.shiftyjelly.pocketcasts.repositories.extensions.autoDrawableId
 import au.com.shiftyjelly.pocketcasts.repositories.extensions.automotiveDrawableId
 import au.com.shiftyjelly.pocketcasts.repositories.extensions.getArtworkUrl
 import au.com.shiftyjelly.pocketcasts.repositories.extensions.getSummaryText
-import au.com.shiftyjelly.pocketcasts.repositories.images.PodcastImageLoader
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
 import au.com.shiftyjelly.pocketcasts.repositories.playback.EXTRA_CONTENT_STYLE_GROUP_TITLE_HINT
 import au.com.shiftyjelly.pocketcasts.repositories.playback.FOLDER_ROOT_PREFIX
 import au.com.shiftyjelly.pocketcasts.utils.Util
-import com.bumptech.glide.load.DataSource
-import com.bumptech.glide.load.engine.GlideException
-import com.bumptech.glide.request.RequestListener
-import com.bumptech.glide.request.target.Target
-import java.io.File
+import coil.executeBlocking
+import coil.imageLoader
 import au.com.shiftyjelly.pocketcasts.images.R as IR
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
@@ -64,12 +63,8 @@ data class AutoMediaId(
 }
 
 object AutoConverter {
-
-    private const val THUMBNAIL_IMAGE_SIZE = 200
-    private const val FULL_IMAGE_SIZE = 800
-
-    fun convertEpisodeToMediaItem(context: Context, episode: BaseEpisode, parentPodcast: Podcast, groupTrailers: Boolean = false, sourceId: String = parentPodcast.uuid): MediaBrowserCompat.MediaItem {
-        val localUri = getBitmapUriForPodcast(parentPodcast, episode, context)
+    fun convertEpisodeToMediaItem(context: Context, episode: BaseEpisode, parentPodcast: Podcast, useEpisodeArtwork: Boolean, groupTrailers: Boolean = false, sourceId: String = parentPodcast.uuid): MediaBrowserCompat.MediaItem {
+        val localUri = getPodcastArtworkUri(parentPodcast, episode, context, useEpisodeArtwork)
 
         val extrasForEpisode = extrasForEpisode(episode)
         if (groupTrailers) {
@@ -89,9 +84,9 @@ object AutoConverter {
         return MediaBrowserCompat.MediaItem(episodeDesc, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
     }
 
-    fun convertPodcastToMediaItem(podcast: Podcast, context: Context): MediaBrowserCompat.MediaItem? {
+    fun convertPodcastToMediaItem(podcast: Podcast, context: Context, useEpisodeArtwork: Boolean): MediaBrowserCompat.MediaItem? {
         return try {
-            val localUri = getBitmapUriForPodcast(podcast = podcast, episode = null, context = context)
+            val localUri = getPodcastArtworkUri(podcast = podcast, episode = null, context = context, showRssArtwork = useEpisodeArtwork)
 
             val podcastDesc = MediaDescriptionCompat.Builder()
                 .setTitle(podcast.title)
@@ -131,8 +126,10 @@ object AutoConverter {
         return MediaBrowserCompat.MediaItem(mediaDescription, MediaBrowserCompat.MediaItem.FLAG_BROWSABLE)
     }
 
-    fun getBitmapUriForPodcast(podcast: Podcast?, episode: BaseEpisode?, context: Context): Uri? {
-        val url = if (episode is UserEpisode) {
+    fun getPodcastArtworkUri(podcast: Podcast?, episode: BaseEpisode?, context: Context, showRssArtwork: Boolean): Uri? {
+        val url = if (episode is PodcastEpisode && (!episode.imageUrl.isNullOrBlank()) && showRssArtwork) {
+            episode.imageUrl
+        } else if (episode is UserEpisode) {
             // the artwork for user uploaded episodes are stored on each episode
             episode.artworkUrl
         } else {
@@ -147,21 +144,27 @@ object AutoConverter {
         return getArtworkUriForContentProvider(podcastArtUri, context)
     }
 
+    fun getPodcastArtworkBitmap(episode: BaseEpisode, context: Context, useEpisodeArtwork: Boolean): Bitmap? {
+        val imageRequestFactory = PocketCastsImageRequestFactory(
+            context,
+            isDarkTheme = true,
+            size = 480,
+            placeholderType = PocketCastsImageRequestFactory.PlaceholderType.Small,
+        )
+
+        val request = imageRequestFactory.create(episode, useEpisodeArtwork)
+        return context.imageLoader.executeBlocking(request).drawable?.toBitmap() ?: loadPlaceholderBitmap(imageRequestFactory, context)
+    }
+
+    private fun loadPlaceholderBitmap(imageRequestFactory: PocketCastsImageRequestFactory, context: Context): Bitmap? {
+        val request = imageRequestFactory.createForPodcast(podcastUuid = null)
+        return context.imageLoader.executeBlocking(request).drawable?.toBitmap()
+    }
+
     private fun getBitmapUriForFolder(context: Context, folder: Folder?): Uri? {
         if (folder == null) return null
 
         return getBitmapUri(drawable = folder.automotiveDrawableId, context = context)
-    }
-
-    val autoImageLoaderListener = object : RequestListener<File> {
-        override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<File>?, isFirstResource: Boolean): Boolean {
-            Log.e("AutoConverter", "Could not load image in automotive $e")
-            return false
-        }
-
-        override fun onResourceReady(resource: File?, model: Any?, target: Target<File>?, dataSource: DataSource?, isFirstResource: Boolean): Boolean {
-            return true
-        }
     }
 
     /**
@@ -169,16 +172,6 @@ object AutoConverter {
      */
     fun getArtworkUriForContentProvider(podcastArtUri: Uri?, context: Context): Uri? {
         return podcastArtUri?.asAlbumArtContentUri(context)
-    }
-
-    fun getBitmapForPodcast(podcast: Podcast?, useThumbnail: Boolean, context: Context): Bitmap? {
-        if (podcast == null) {
-            return null
-        }
-
-        val size = if (useThumbnail) THUMBNAIL_IMAGE_SIZE else FULL_IMAGE_SIZE
-        val imageLoader = PodcastImageLoader(context = context, isDarkTheme = true, transformations = emptyList()).smallPlaceholder()
-        return imageLoader.getBitmap(podcast, size)
     }
 
     fun getPodcastsBitmapUri(context: Context): Uri {
@@ -208,22 +201,40 @@ object AutoConverter {
      * Use the drawable id so Proguard doesn't remove the asset in the production build.
      */
     fun getBitmapUri(@DrawableRes drawable: Int, context: Context): Uri {
-        val drawableName = context.resources.getResourceEntryName(drawable)
-        return Uri.parse("android.resource://" + context.packageName + "/drawable/" + drawableName)
+        val resources = context.resources
+        // This is an example of the URI android.resource://au.com.shiftyjelly.pocketcasts/drawable/auto_folder_01
+        return Uri.Builder()
+            .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE) // android.resource
+            .authority(resources.getResourcePackageName(drawable)) // au.com.shiftyjelly.pocketcasts
+            .appendPath(resources.getResourceTypeName(drawable)) // drawable
+            .appendPath(resources.getResourceEntryName(drawable)) // auto_folder_01
+            .build()
     }
 
     private fun extrasForEpisode(episode: BaseEpisode): Bundle {
         val downloadStatus = if (episode.isDownloaded) STATUS_DOWNLOADED else STATUS_NOT_DOWNLOADED
 
-        val completionStatus = when (episode.playingStatus) {
-            EpisodePlayingStatus.NOT_PLAYED -> DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_NOT_PLAYED
-            EpisodePlayingStatus.IN_PROGRESS -> DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED
-            EpisodePlayingStatus.COMPLETED -> DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED
+        val completionStatus: Int
+        val completionPercentage: Double
+        when (episode.playingStatus) {
+            EpisodePlayingStatus.NOT_PLAYED -> {
+                completionStatus = DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_NOT_PLAYED
+                completionPercentage = 0.0
+            }
+            EpisodePlayingStatus.IN_PROGRESS -> {
+                completionStatus = DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED
+                completionPercentage = if (episode.duration == 0.0) 0.0 else (episode.playedUpTo / episode.duration).coerceIn(0.0, 1.0)
+            }
+            EpisodePlayingStatus.COMPLETED -> {
+                completionStatus = DESCRIPTION_EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED
+                completionPercentage = 1.0
+            }
         }
 
         return bundleOf(
             EXTRA_DOWNLOAD_STATUS to downloadStatus,
             DESCRIPTION_EXTRAS_KEY_COMPLETION_STATUS to completionStatus,
+            DESCRIPTION_EXTRAS_KEY_COMPLETION_PERCENTAGE to completionPercentage,
         )
     }
 }

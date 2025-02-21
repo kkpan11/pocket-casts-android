@@ -4,22 +4,25 @@ import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
 import android.os.Bundle
+import android.os.Parcelable
 import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.core.os.BundleCompat
 import androidx.core.os.bundleOf
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.UserEpisode
 import au.com.shiftyjelly.pocketcasts.models.to.SignInState
 import au.com.shiftyjelly.pocketcasts.models.to.SubscriptionStatus
+import au.com.shiftyjelly.pocketcasts.models.type.EpisodeViewSource
 import au.com.shiftyjelly.pocketcasts.models.type.UserEpisodeServerStatus
 import au.com.shiftyjelly.pocketcasts.player.view.bookmark.BookmarksContainerFragment
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
@@ -31,21 +34,20 @@ import au.com.shiftyjelly.pocketcasts.profile.cloud.CloudBottomSheetViewModel.Co
 import au.com.shiftyjelly.pocketcasts.profile.databinding.BottomSheetCloudFileBinding
 import au.com.shiftyjelly.pocketcasts.repositories.bookmark.BookmarkManager
 import au.com.shiftyjelly.pocketcasts.repositories.download.DownloadManager
-import au.com.shiftyjelly.pocketcasts.repositories.images.PodcastImageLoader
-import au.com.shiftyjelly.pocketcasts.repositories.images.into
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
+import au.com.shiftyjelly.pocketcasts.repositories.images.loadInto
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.playback.UpNextQueue
 import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingFlow
 import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingLauncher
 import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingUpgradeSource
 import au.com.shiftyjelly.pocketcasts.ui.extensions.getThemeColor
-import au.com.shiftyjelly.pocketcasts.ui.images.PodcastImageLoaderThemed
+import au.com.shiftyjelly.pocketcasts.ui.extensions.themed
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import au.com.shiftyjelly.pocketcasts.ui.theme.ThemeColor
 import au.com.shiftyjelly.pocketcasts.utils.Network
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import au.com.shiftyjelly.pocketcasts.views.dialog.OptionsDialog
+import au.com.shiftyjelly.pocketcasts.views.extensions.setSystemWindowInsetToPadding
 import au.com.shiftyjelly.pocketcasts.views.helper.CloudDeleteHelper
 import au.com.shiftyjelly.pocketcasts.views.helper.WarningsHelper
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -54,27 +56,32 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.rx2.asObservable
+import kotlinx.parcelize.Parcelize
 import au.com.shiftyjelly.pocketcasts.images.R as IR
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 import au.com.shiftyjelly.pocketcasts.profile.R as PR
 import au.com.shiftyjelly.pocketcasts.ui.R as UR
 
-private const val ARG_UUID = "userEpisodeUUID"
-private const val ARG_FORCE_DARK = "forceDark"
-
 @AndroidEntryPoint
 class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
     companion object {
-        fun newInstance(userEpisodeUUID: String, forceDark: Boolean = false): CloudFileBottomSheetFragment {
-            val bundle = bundleOf(
-                ARG_UUID to userEpisodeUUID,
-                ARG_FORCE_DARK to forceDark,
-            )
-            val fragment = CloudFileBottomSheetFragment()
-            fragment.arguments = bundle
-            return fragment
+        private const val NEW_INSTANCE_ARG = "CloudFileBottomSheetArg"
+
+        fun newInstance(
+            userEpisodeId: String,
+            forceDark: Boolean = false,
+            source: EpisodeViewSource = EpisodeViewSource.UNKNOWN,
+        ) = CloudFileBottomSheetFragment().apply {
+            arguments = bundleOf(NEW_INSTANCE_ARG to Args(userEpisodeId, forceDark, source))
         }
     }
+
+    @Parcelize
+    private class Args(
+        val episodeId: String,
+        val forceDark: Boolean,
+        val source: EpisodeViewSource,
+    ) : Parcelable
 
     @Inject lateinit var downloadManager: DownloadManager
 
@@ -88,25 +95,24 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
 
     @Inject lateinit var warningsHelper: WarningsHelper
 
-    @Inject lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     @Inject lateinit var bookmarkManager: BookmarkManager
 
-    var podcastImageLoader: PodcastImageLoader? = null
+    private var pocketCastsImageRequestFactory: PocketCastsImageRequestFactory? = null
     private val viewModel: CloudBottomSheetViewModel by viewModels()
     private var binding: BottomSheetCloudFileBinding? = null
 
-    val episodeUUID: String
-        get() = arguments?.getString(ARG_UUID)!!
-
-    val forceDarkTheme: Boolean
-        get() = arguments?.getBoolean(ARG_FORCE_DARK) ?: false
+    private val args get() = requireNotNull(arguments?.let { BundleCompat.getParcelable(it, NEW_INSTANCE_ARG, Args::class.java) })
 
     val activeTheme: Theme.ThemeType
-        get() = if (forceDarkTheme && theme.isLightTheme) Theme.ThemeType.DARK else theme.activeTheme
+        get() = if (args.forceDark && theme.isLightTheme) Theme.ThemeType.DARK else theme.activeTheme
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        if (!forceDarkTheme) {
+        if (savedInstanceState == null) {
+            analyticsTracker.track(AnalyticsEvent.USER_FILE_DETAIL_SHOWN, mapOf("source" to args.source.value))
+        }
+        if (!args.forceDark) {
             return super.onCreateDialog(savedInstanceState)
         }
 
@@ -141,7 +147,9 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
             behavior.skipCollapsed = true
         }
 
-        viewModel.setup(episodeUUID)
+        binding?.root?.setSystemWindowInsetToPadding(bottom = true)
+
+        viewModel.setup(args.episodeId)
         viewModel.state.observe(
             viewLifecycleOwner,
             Observer { state ->
@@ -224,12 +232,11 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
                 }
 
                 val layoutBookmark = binding.layoutBookmark
-                layoutBookmark.isVisible = FeatureFlag.isEnabled(Feature.BOOKMARKS_ENABLED)
                 layoutBookmark.setOnClickListener {
                     dialog?.dismiss()
                     viewModel.trackOptionTapped(CloudBottomSheetViewModel.BOOKMARKS)
                     BookmarksContainerFragment.newInstance(
-                        episodeUuid = episodeUUID,
+                        episodeUuid = args.episodeId,
                         sourceView = SourceView.FILES,
                     ).show(parentFragmentManager, "bookmarks_container")
                 }
@@ -273,7 +280,7 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
                 val cloudRes = when (episode.serverStatus) {
                     UserEpisodeServerStatus.LOCAL, UserEpisodeServerStatus.MISSING -> PR.drawable.ic_upload_file
                     UserEpisodeServerStatus.UPLOADING, UserEpisodeServerStatus.WAITING_FOR_WIFI, UserEpisodeServerStatus.QUEUED -> IR.drawable.ic_downloading
-                    UserEpisodeServerStatus.UPLOADED -> if (episode.isDownloaded) R.drawable.ic_upload___remove_from_cloud___menu else IR.drawable.ic_download
+                    UserEpisodeServerStatus.UPLOADED -> if (episode.isDownloaded) IR.drawable.ic_remove_from_cloud else IR.drawable.ic_download
                 }
                 binding.imgIconCloud.setImageResource(cloudRes)
 
@@ -311,8 +318,7 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
                         dialog?.dismiss()
                     }
                 }
-
-                podcastImageLoader?.load(userEpisode = episode, thumbnail = true)?.into(binding.imgFile)
+                pocketCastsImageRequestFactory?.create(episode, useEpisodeArtwork = false)?.loadInto(binding.imgFile)
             },
         )
 
@@ -343,18 +349,18 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
-        podcastImageLoader = PodcastImageLoaderThemed(context)
+        pocketCastsImageRequestFactory = PocketCastsImageRequestFactory(context).themed().smallSize()
     }
 
     override fun onDetach() {
         super.onDetach()
-        podcastImageLoader = null
+        pocketCastsImageRequestFactory = null
     }
 
     fun download(episode: UserEpisode, isOnWifi: Boolean) {
         viewModel.trackOptionTapped(DOWNLOAD)
         if (settings.warnOnMeteredNetwork.value && !isOnWifi) {
-            warningsHelper.downloadWarning(episodeUUID, "user episode sheet")
+            warningsHelper.downloadWarning(args.episodeId, "user episode sheet")
                 .show(parentFragmentManager, "download_warning")
         } else {
             viewModel.download(episode)
@@ -364,7 +370,7 @@ class CloudFileBottomSheetFragment : BottomSheetDialogFragment() {
     private fun upload(episode: UserEpisode, isOnWifi: Boolean) {
         viewModel.trackOptionTapped(UPLOAD)
         if (settings.warnOnMeteredNetwork.value && !isOnWifi) {
-            warningsHelper.uploadWarning(episodeUUID, source = SourceView.FILES)
+            warningsHelper.uploadWarning(args.episodeId, source = SourceView.FILES)
                 .show(parentFragmentManager, "upload_warning")
         } else {
             viewModel.uploadEpisode(episode)

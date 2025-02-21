@@ -30,19 +30,20 @@ fun TextH10(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.theme.colors.primaryText01,
-    disableScale: Boolean = false,
+    disableAutoScale: Boolean = false,
     fontFamily: FontFamily? = null,
     fontSize: TextUnit = 31.sp,
     fontWeight: FontWeight = FontWeight.W700,
     maxLines: Int = Int.MAX_VALUE,
     lineHeight: TextUnit = 37.sp,
     textAlign: TextAlign? = null,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text,
         color = color,
-        fontSize = if (disableScale) fontSize.value.nonScaledSp else fontSize,
-        lineHeight = if (disableScale) lineHeight.value.nonScaledSp else lineHeight,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
         fontFamily = fontFamily,
         fontWeight = fontWeight,
         maxLines = maxLines,
@@ -59,18 +60,20 @@ fun TextH20(
     color: Color = MaterialTheme.theme.colors.primaryText01,
     maxLines: Int = Int.MAX_VALUE,
     textAlign: TextAlign? = null,
-    disableScale: Boolean = false,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+    disableAutoScale: Boolean = false,
     fontSize: TextUnit = 22.sp,
     lineHeight: TextUnit = 30.sp,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text,
         color = color,
-        fontSize = if (disableScale) fontSize.value.nonScaledSp else fontSize,
-        lineHeight = if (disableScale) lineHeight.value.nonScaledSp else lineHeight.value.sp,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
         fontWeight = FontWeight.W700,
         maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
+        overflow = overflow,
         textAlign = textAlign,
         modifier = modifier,
     )
@@ -85,21 +88,24 @@ fun TextH30(
     fontFamily: FontFamily? = null,
     fontWeight: FontWeight? = null,
     maxLines: Int = Int.MAX_VALUE,
-    disableScale: Boolean = false,
+    disableAutoScale: Boolean = false,
     fontSize: TextUnit? = null,
     lineHeight: TextUnit = 21.sp,
+    style: TextStyle = TextStyle(),
+    fontScale: Float = 1f,
 ) {
     val fontSizeUpdated = fontSize ?: 18.sp
     Text(
         text = text,
         color = color,
         fontFamily = fontFamily,
-        fontSize = if (disableScale) fontSizeUpdated.value.nonScaledSp else fontSizeUpdated,
-        lineHeight = if (disableScale) lineHeight.value.nonScaledSp else lineHeight.value.sp,
+        fontSize = fontSizeUpdated.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
         textAlign = textAlign,
         fontWeight = fontWeight ?: FontWeight.W600,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
+        style = style,
         modifier = modifier,
     )
 }
@@ -112,12 +118,14 @@ fun TextP30(
     color: Color = MaterialTheme.theme.colors.primaryText01,
     maxLines: Int = Int.MAX_VALUE,
     fontWeight: FontWeight? = FontWeight.W500,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text,
         color = color,
-        fontSize = 18.sp,
-        lineHeight = 24.sp,
+        fontSize = 18.sp.scaled(disableAutoScale, fontScale),
+        lineHeight = 24.sp.scaled(disableAutoScale, fontScale),
         textAlign = textAlign,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
@@ -134,14 +142,16 @@ fun TextH40(
     color: Color = MaterialTheme.theme.colors.primaryText01,
     maxLines: Int = Int.MAX_VALUE,
     fontWeight: FontWeight = FontWeight.W500,
-    disableScale: Boolean = false,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
+    lineHeight: TextUnit = 21.sp,
 ) {
     Text(
         text = text,
         color = color,
-        fontSize = if (disableScale) 15.nonScaledSp else 15.sp,
+        fontSize = 15.sp.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
         fontWeight = fontWeight,
-        lineHeight = if (disableScale) 21.nonScaledSp else 21.sp,
         textAlign = textAlign,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
@@ -156,17 +166,47 @@ fun TextP40(
     textAlign: TextAlign? = null,
     color: Color = MaterialTheme.theme.colors.primaryText01,
     maxLines: Int = Int.MAX_VALUE,
-    disableScale: Boolean = false,
+    disableAutoScale: Boolean = false,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
     fontFamily: FontFamily? = null,
     fontWeight: FontWeight? = null,
     fontSize: TextUnit = 16.sp,
     lineHeight: TextUnit = 22.sp,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text,
         color = color,
-        fontSize = if (disableScale) fontSize.value.nonScaledSp else fontSize,
-        lineHeight = if (disableScale) lineHeight.value.nonScaledSp else lineHeight,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
+        textAlign = textAlign,
+        maxLines = maxLines,
+        overflow = overflow,
+        fontFamily = fontFamily,
+        fontWeight = fontWeight,
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun TextP40(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign? = null,
+    color: Color = MaterialTheme.theme.colors.primaryText01,
+    maxLines: Int = Int.MAX_VALUE,
+    disableAutoScale: Boolean = false,
+    fontFamily: FontFamily? = null,
+    fontWeight: FontWeight? = null,
+    fontSize: TextUnit = 16.sp,
+    lineHeight: TextUnit = 22.sp,
+    fontScale: Float = 1f,
+) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
         textAlign = textAlign,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
@@ -186,16 +226,17 @@ fun TextH50(
     fontFamily: FontFamily? = null,
     fontSize: TextUnit = 14.sp,
     fontWeight: FontWeight = FontWeight.W500,
-    disableScale: Boolean = false,
+    disableAutoScale: Boolean = false,
     lineHeight: TextUnit = 20.sp,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text,
         color = color,
         fontFamily = fontFamily,
-        fontSize = if (disableScale) fontSize.value.nonScaledSp else fontSize,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeight.scaled(disableAutoScale, fontScale),
         fontWeight = fontWeight,
-        lineHeight = if (disableScale) lineHeight.value.nonScaledSp else lineHeight,
         textAlign = textAlign,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
@@ -213,6 +254,9 @@ fun TextP50(
     textAlign: TextAlign? = null,
     fontWeight: FontWeight? = null,
     lineHeight: TextUnit? = null,
+    letterSpacing: TextUnit? = null,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
     TextP50(
         text = AnnotatedString(text),
@@ -222,7 +266,10 @@ fun TextP50(
         style = style,
         textAlign = textAlign,
         fontWeight = fontWeight,
+        disableAutoScale = disableAutoScale,
         lineHeight = lineHeight,
+        letterSpacing = letterSpacing,
+        fontScale = fontScale,
     )
 }
 
@@ -236,12 +283,20 @@ fun TextP50(
     textAlign: TextAlign? = null,
     fontWeight: FontWeight? = null,
     lineHeight: TextUnit? = null,
+    letterSpacing: TextUnit? = null,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
+    val fontSize = 14.sp
+    val lineHeightUpdated = lineHeight ?: 20.sp
+    val letterSpacingUpdated = letterSpacing ?: 0.sp
+
     Text(
         text = text,
         color = color ?: MaterialTheme.theme.colors.primaryText01,
-        fontSize = 14.sp,
-        lineHeight = lineHeight ?: 20.sp,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = lineHeightUpdated.scaled(disableAutoScale, fontScale),
+        letterSpacing = letterSpacingUpdated.scaled(disableAutoScale, fontScale),
         maxLines = maxLines ?: Int.MAX_VALUE,
         overflow = TextOverflow.Ellipsis,
         style = style ?: LocalTextStyle.current,
@@ -259,14 +314,18 @@ fun TextH60(
     modifier: Modifier = Modifier,
     textAlign: TextAlign? = null,
     color: Color = MaterialTheme.theme.colors.primaryText01,
+    fontSize: TextUnit = textH60FontSize,
+    fontWeight: FontWeight = FontWeight.W600,
     maxLines: Int = Int.MAX_VALUE,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text,
         color = color,
-        fontSize = textH60FontSize,
-        fontWeight = FontWeight.W600,
-        lineHeight = 14.sp,
+        fontSize = fontSize.scaled(disableAutoScale, fontScale),
+        lineHeight = 14.sp.scaled(disableAutoScale, fontScale),
+        fontWeight = fontWeight,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,
@@ -282,17 +341,24 @@ fun TextP60(
     textAlign: TextAlign? = null,
     maxLines: Int = Int.MAX_VALUE,
     fontWeight: FontWeight? = null,
+    fontSize: TextUnit? = null,
+    style: TextStyle = TextStyle(),
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
+    letterSpacing: TextUnit = 0.sp,
 ) {
+    val fontSizeUpdated = fontSize ?: 13.sp
     Text(
         text = text,
         color = color,
-        fontSize = 13.sp,
-        lineHeight = 15.sp,
-        letterSpacing = 0.sp,
+        fontSize = fontSizeUpdated.scaled(disableAutoScale, fontScale),
+        lineHeight = 15.sp.scaled(disableAutoScale, fontScale),
+        letterSpacing = letterSpacing,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         textAlign = textAlign,
         fontWeight = fontWeight,
+        style = style,
         modifier = modifier,
     )
 }
@@ -306,16 +372,19 @@ fun TextH70(
     fontFamily: FontFamily? = null,
     fontWeight: FontWeight = FontWeight.W500,
     maxLines: Int = Int.MAX_VALUE,
-    disableScale: Boolean = false,
+    fontSize: TextUnit? = null,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
+    val fontSizeUpdated = fontSize ?: 12.sp
     Text(
         text = text,
         color = color,
-        fontSize = if (disableScale) 12.nonScaledSp else 12.sp,
+        fontSize = fontSizeUpdated.scaled(disableAutoScale, fontScale),
+        lineHeight = 14.sp.scaled(disableAutoScale, fontScale),
+        letterSpacing = 0.25.sp.scaled(disableAutoScale, fontScale),
         fontFamily = fontFamily,
         fontWeight = fontWeight,
-        lineHeight = if (disableScale) 14.nonScaledSp else 14.sp,
-        letterSpacing = if (disableScale) .25f.nonScaledSp else .25.sp,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,
@@ -328,15 +397,17 @@ fun TextC50(
     text: String,
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = text.uppercase(Locale.getDefault()),
         color = MaterialTheme.theme.colors.primaryText02,
         fontFamily = FontFamily.SansSerif,
-        fontSize = 13.sp,
+        fontSize = 13.sp.scaled(disableAutoScale, fontScale),
+        lineHeight = 19.sp.scaled(disableAutoScale, fontScale),
+        letterSpacing = 0.6.sp.scaled(disableAutoScale, fontScale),
         fontWeight = FontWeight.W700,
-        lineHeight = 19.sp,
-        letterSpacing = 0.6.sp,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,
@@ -349,20 +420,25 @@ fun TextC70(
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
     isUpperCase: Boolean = true,
+    disableAutoScale: Boolean = false,
+    fontScale: Float = 1f,
 ) {
     Text(
         text = if (isUpperCase) text.uppercase(Locale.getDefault()) else text,
         color = MaterialTheme.theme.colors.primaryText02,
         fontFamily = FontFamily.SansSerif,
-        fontSize = 12.sp,
+        fontSize = 12.sp.scaled(disableAutoScale, fontScale),
+        lineHeight = 14.sp.scaled(disableAutoScale, fontScale),
+        letterSpacing = 0.6.sp.scaled(disableAutoScale, fontScale),
         fontWeight = FontWeight.W500,
-        lineHeight = 14.sp,
-        letterSpacing = 0.6.sp,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,
     )
 }
+
+@Composable
+private fun TextUnit.scaled(disabled: Boolean, fontScale: Float) = (if (disabled) value.nonScaledSp else this) * fontScale
 
 @ShowkaseComposable(name = "Text", group = "Text", styleName = "Light", defaultStyle = true)
 @Preview(name = "Light")

@@ -2,9 +2,13 @@ package au.com.shiftyjelly.pocketcasts.podcasts.view.share
 
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.Modifier
 import androidx.fragment.app.viewModels
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -12,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
+import au.com.shiftyjelly.pocketcasts.compose.extensions.contentWithoutConsumedInsets
 import au.com.shiftyjelly.pocketcasts.views.fragments.BaseFragment
 import dagger.hilt.android.AndroidEntryPoint
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
@@ -29,50 +34,56 @@ class ShareListCreateFragment : BaseFragment() {
         const val failed = "failed"
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View = ComposeView(requireContext()).apply {
-        setContent {
-            AppThemeWithBackground(theme.activeTheme) {
-                navHostController = rememberNavController()
-                val navController = navHostController ?: return@AppThemeWithBackground
-                NavHost(navController = navController, startDestination = NavRoutes.podcasts) {
-                    composable(NavRoutes.podcasts) {
-                        ShareListCreatePodcastsPage(
-                            onCloseClick = { activity?.finish() },
-                            onNextClick = { selectedPodcastsCount ->
-                                viewModel.trackShareEvent(
-                                    AnalyticsEvent.SHARE_PODCASTS_PODCASTS_SELECTED,
-                                    AnalyticsProp.countMap(selectedPodcastsCount),
-                                )
-                                navController.navigate(NavRoutes.title)
-                            },
-                            viewModel = viewModel,
-                        )
-                    }
-                    composable(NavRoutes.title) {
-                        ShareListCreateTitlePage(
-                            onBackClick = { navController.popBackStack() },
-                            onNextClick = { createShareLink(navController) },
-                            viewModel = viewModel,
-                        )
-                    }
-                    composable(NavRoutes.building) {
-                        ShareListCreateBuildingPage(
-                            onCloseClick = { activity?.finish() },
-                            viewModel = viewModel,
-                        )
-                    }
-                    composable(NavRoutes.failed) {
-                        ShareListCreateFailedPage(
-                            onCloseClick = { activity?.finish() },
-                            onRetryClick = { createShareLink(navController) },
-                        )
-                    }
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ) = contentWithoutConsumedInsets {
+        AppThemeWithBackground(theme.activeTheme) {
+            navHostController = rememberNavController()
+            val navController = navHostController ?: return@AppThemeWithBackground
+            NavHost(
+                navController = navController,
+                startDestination = NavRoutes.podcasts,
+                modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)),
+            ) {
+                composable(NavRoutes.podcasts) {
+                    ShareListCreatePodcastsPage(
+                        onCloseClick = { activity?.finish() },
+                        onNextClick = { selectedPodcastsCount ->
+                            viewModel.trackShareEvent(
+                                AnalyticsEvent.SHARE_PODCASTS_PODCASTS_SELECTED,
+                                AnalyticsProp.countMap(selectedPodcastsCount),
+                            )
+                            navController.navigate(NavRoutes.title)
+                        },
+                        viewModel = viewModel,
+                    )
+                }
+                composable(NavRoutes.title) {
+                    ShareListCreateTitlePage(
+                        onBackClick = { navController.popBackStack() },
+                        onNextClick = { createShareLink(navController) },
+                        viewModel = viewModel,
+                    )
+                }
+                composable(NavRoutes.building) {
+                    ShareListCreateBuildingPage(
+                        onCloseClick = { activity?.finish() },
+                        viewModel = viewModel,
+                    )
+                }
+                composable(NavRoutes.failed) {
+                    ShareListCreateFailedPage(
+                        onCloseClick = { activity?.finish() },
+                        onRetryClick = { createShareLink(navController) },
+                    )
                 }
             }
+        }
 
-            if (!viewModel.isFragmentChangingConfigurations) {
-                viewModel.trackShareEvent(AnalyticsEvent.SHARE_PODCASTS_SHOWN)
-            }
+        if (!viewModel.isFragmentChangingConfigurations) {
+            viewModel.trackShareEvent(AnalyticsEvent.SHARE_PODCASTS_SHOWN)
         }
     }
 

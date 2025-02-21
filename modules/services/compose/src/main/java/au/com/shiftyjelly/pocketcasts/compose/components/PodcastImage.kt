@@ -1,27 +1,25 @@
 package au.com.shiftyjelly.pocketcasts.compose.components
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Card
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import au.com.shiftyjelly.pocketcasts.ui.images.PodcastImageLoaderThemed
-import coil.compose.AsyncImagePainter
-import coil.compose.rememberAsyncImagePainter
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory.PlaceholderType
+import au.com.shiftyjelly.pocketcasts.ui.extensions.themed
+import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
 fun podcastImageCornerSize(width: Dp): Dp {
     return when {
@@ -41,8 +39,21 @@ fun PodcastImage(
     dropShadow: Boolean = true,
     cornerSize: Dp? = null,
     elevation: Dp? = null,
+    placeholderType: PlaceholderType = PlaceholderType.Large,
 ) {
-    BoxWithConstraints(modifier = modifier) {
+    val context = LocalContext.current
+
+    val imageRequest = remember(uuid) {
+        PocketCastsImageRequestFactory(context, placeholderType = placeholderType).themed().createForPodcast(uuid)
+    }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .semantics(mergeDescendants = true) {
+                role = Role.Image
+                contentDescription = context.getString(LR.string.podcast_artwork_description)
+            },
+    ) {
         val corners = if (roundCorners) cornerSize ?: podcastImageCornerSize(maxWidth) else null
         if (dropShadow) {
             val finalElevation = elevation ?: when {
@@ -57,7 +68,7 @@ fun PodcastImage(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 CoilImage(
-                    uuid = uuid,
+                    imageRequest = imageRequest,
                     title = title,
                     showTitle = showTitle,
                     modifier = Modifier.fillMaxSize(),
@@ -65,42 +76,11 @@ fun PodcastImage(
             }
         } else {
             CoilImage(
-                uuid = uuid,
+                imageRequest = imageRequest,
                 title = title,
                 showTitle = showTitle,
                 corners = corners,
                 modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun CoilImage(uuid: String, title: String, showTitle: Boolean, modifier: Modifier = Modifier, corners: Dp? = null) {
-    val context = LocalContext.current
-
-    val imageRequest = remember(uuid) {
-        PodcastImageLoaderThemed(context).loadCoil(podcastUuid = uuid).build()
-    }
-    val painter = rememberAsyncImagePainter(
-        model = imageRequest,
-        contentScale = ContentScale.Crop,
-    )
-
-    Box(contentAlignment = Alignment.Center) {
-        Image(
-            painter = painter,
-            contentDescription = title,
-            modifier = modifier
-                .clip(if (corners == null) RectangleShape else RoundedCornerShape(corners)),
-        )
-        val state = painter.state
-        if (showTitle && state is AsyncImagePainter.State.Error) {
-            TextP60(
-                text = title,
-                textAlign = TextAlign.Center,
-                maxLines = 4,
-                modifier = Modifier.padding(2.dp),
             )
         }
     }

@@ -3,17 +3,17 @@ package au.com.shiftyjelly.pocketcasts.player.view.bookmark
 import android.app.Activity
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
+import au.com.shiftyjelly.pocketcasts.compose.CallOnce
+import au.com.shiftyjelly.pocketcasts.compose.extensions.contentWithoutConsumedInsets
 import au.com.shiftyjelly.pocketcasts.models.entity.Bookmark
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import dagger.hilt.android.AndroidEntryPoint
@@ -27,30 +27,30 @@ class BookmarkFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View {
-        viewModel.load(BookmarkArguments.createFromArguments(arguments))
-        return ComposeView(requireContext()).apply {
-            setContent {
-                AppThemeWithBackground(Theme.ThemeType.DARK) {
-                    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+    ) = contentWithoutConsumedInsets {
+        LaunchedEffect(Unit) { viewModel.load(BookmarkArguments.createFromArguments(arguments)) }
+        AppThemeWithBackground(Theme.ThemeType.DARK) {
+            val uiState: BookmarkViewModel.UiState by viewModel.uiState.collectAsState()
 
-                    val uiState: BookmarkViewModel.UiState by viewModel.uiState.collectAsState()
-                    BookmarkPage(
-                        isNewBookmark = uiState.isNewBookmark,
-                        title = uiState.title,
-                        tintColor = uiState.tintColor,
-                        backgroundColor = uiState.backgroundColor,
-                        onTitleChange = { viewModel.changeTitle(it) },
-                        onSave = ::saveBookmark,
-                        onClose = ::close,
-                        modifier = Modifier.background(uiState.backgroundColor),
-                    )
-                }
+            CallOnce {
+                viewModel.onShown()
             }
+
+            BookmarkPage(
+                isNewBookmark = uiState.isNewBookmark,
+                title = uiState.title,
+                tintColor = uiState.tintColor,
+                backgroundColor = uiState.backgroundColor,
+                onTitleChange = { viewModel.changeTitle(it) },
+                onSave = ::saveBookmark,
+                onClose = ::close,
+                modifier = Modifier.background(uiState.backgroundColor),
+            )
         }
     }
 
     private fun saveBookmark() {
+        viewModel.onSubmitBookmark()
         viewModel.saveBookmark(onSaved = { bookmark, isExisting ->
             bookmarkSaved(bookmark, isExisting)
         })
@@ -70,6 +70,7 @@ class BookmarkFragment : Fragment() {
     }
 
     private fun close() {
+        viewModel.onClose()
         requireActivity().run {
             setResult(Activity.RESULT_CANCELED)
             finish()

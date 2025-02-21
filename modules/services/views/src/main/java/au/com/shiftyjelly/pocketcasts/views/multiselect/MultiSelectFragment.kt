@@ -9,7 +9,7 @@ import androidx.lifecycle.toLiveData
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.SimpleItemAnimator
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.ui.helper.FragmentHostListener
@@ -28,11 +28,15 @@ import au.com.shiftyjelly.pocketcasts.localization.R as LR
 class MultiSelectFragment : BaseFragment(), MultiSelectTouchCallback.ItemTouchHelperAdapter {
     @Inject lateinit var settings: Settings
 
-    @Inject lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     @Inject lateinit var multiSelectEpisodesHelper: MultiSelectEpisodesHelper
+
     private val source: String
         get() = arguments?.getString(ARG_SOURCE) ?: SourceView.UNKNOWN.analyticsValue
+
+    private val shouldShowRemoveListeningHistory: Boolean
+        get() = arguments?.getBoolean(ARG_SHOULD_SHOW_REMOVE_LISTENING_HISTORY) ?: false
 
     private val adapter = MultiSelectAdapter(editable = true, listener = null, dragListener = this::onItemStartDrag)
     private lateinit var itemTouchHelper: ItemTouchHelper
@@ -81,6 +85,12 @@ class MultiSelectFragment : BaseFragment(), MultiSelectTouchCallback.ItemTouchHe
         settings.multiSelectItemsObservable.toFlowable(BackpressureStrategy.LATEST).toLiveData()
             .observe(viewLifecycleOwner) {
                 val multiSelectActions: MutableList<Any> = MultiSelectEpisodeAction.listFromIds(it).toMutableList()
+
+                if (!shouldShowRemoveListeningHistory) {
+                    multiSelectActions.removeAll { action ->
+                        action is MultiSelectEpisodeAction.RemoveListeningHistory
+                    }
+                }
 
                 multiSelectActions.add(0, shortcutTitle)
                 multiSelectActions.add(multiSelectEpisodesHelper.maxToolbarIcons + 1, overflowTitle)
@@ -186,9 +196,11 @@ class MultiSelectFragment : BaseFragment(), MultiSelectTouchCallback.ItemTouchHe
 
     companion object {
         private const val ARG_SOURCE = "source"
-        fun newInstance(source: SourceView) = MultiSelectFragment().apply {
+        private const val ARG_SHOULD_SHOW_REMOVE_LISTENING_HISTORY = "should_show_remove_listening_history"
+        fun newInstance(source: SourceView, shouldShowRemoveListeningHistory: Boolean) = MultiSelectFragment().apply {
             arguments = bundleOf(
                 ARG_SOURCE to source.analyticsValue,
+                ARG_SHOULD_SHOW_REMOVE_LISTENING_HISTORY to shouldShowRemoveListeningHistory,
             )
         }
     }

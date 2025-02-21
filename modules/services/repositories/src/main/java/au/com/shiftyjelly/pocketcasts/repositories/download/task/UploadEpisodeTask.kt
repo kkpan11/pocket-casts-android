@@ -9,6 +9,7 @@ import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.UserEpisodeManager
 import au.com.shiftyjelly.pocketcasts.servers.sync.parseErrorResponse
 import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
+import com.squareup.moshi.Moshi
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import io.reactivex.Single
@@ -16,10 +17,11 @@ import retrofit2.HttpException
 
 @HiltWorker
 class UploadEpisodeTask @AssistedInject constructor(
-    @Assisted val context: Context,
+    @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    var userEpisodeManager: UserEpisodeManager,
-    var playbackManager: PlaybackManager,
+    private val userEpisodeManager: UserEpisodeManager,
+    private val playbackManager: PlaybackManager,
+    private val moshi: Moshi,
 ) : RxWorker(context, params) {
 
     companion object {
@@ -37,9 +39,9 @@ class UploadEpisodeTask @AssistedInject constructor(
             return Single.just(Result.failure(outputData.build()))
         }
 
-        return userEpisodeManager.findEpisodeByUuidRx(episodeUUID)
+        return userEpisodeManager.findEpisodeByUuidRxMaybe(episodeUUID)
             .flatMapCompletable { userEpisode ->
-                userEpisodeManager.performUploadToServer(userEpisode, playbackManager)
+                userEpisodeManager.performUploadToServerRxCompletable(userEpisode, playbackManager)
             }
             .andThen(Single.just(Result.success(outputData.build())))
             .onErrorReturn {
@@ -48,8 +50,8 @@ class UploadEpisodeTask @AssistedInject constructor(
                 val retry: Boolean
 
                 if (it is HttpException) {
-                    val errorResponse = it.parseErrorResponse()
-                    errorMessage = errorResponse?.messageLocalized(context.resources)
+                    val errorResponse = it.parseErrorResponse(moshi)
+                    errorMessage = errorResponse?.messageLocalized(applicationContext.resources)
 
                     if (errorMessage == null) {
                         errorMessage = when (it.code()) {

@@ -1,15 +1,18 @@
 package au.com.shiftyjelly.pocketcasts.models.to
 
-data class Chapters(private val items: List<Chapter> = emptyList()) {
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
+import kotlin.time.Duration
 
-    val isEmpty: Boolean
-        get() = items.isEmpty()
+data class Chapters(
+    private val items: List<Chapter> = emptyList(),
+) : List<Chapter> by items {
+    private val selectedItems: List<Chapter>
+        get() = filter { it.selected }
 
-    val size: Int
-        get() = items.size
-
-    fun getNextChapter(timeMs: Int): Chapter? {
-        val currentTimeFinal = if (timeMs < 0) 0 else timeMs
+    fun getNextSelectedChapter(time: Duration): Chapter? {
+        val currentTimeFinal = time.coerceAtLeast(Duration.ZERO)
+        val items = if (FeatureFlag.isEnabled(Feature.DESELECT_CHAPTERS)) selectedItems else items
         for (chapter in items) {
             if (chapter.startTime > currentTimeFinal) {
                 return chapter
@@ -18,19 +21,20 @@ data class Chapters(private val items: List<Chapter> = emptyList()) {
         return null
     }
 
-    fun getPreviousChapter(timeMs: Int): Chapter? {
-        if (items.isEmpty()) {
+    fun getPreviousSelectedChapter(time: Duration): Chapter? {
+        if (isEmpty()) {
             return null
         }
         var foundChapter: Chapter? = null
         var lastChapter: Chapter? = null
+        val items = if (FeatureFlag.isEnabled(Feature.DESELECT_CHAPTERS)) selectedItems else items
         for (chapter in items) {
-            if (chapter.containsTime(timeMs)) {
+            if (time in chapter) {
                 if (foundChapter != null) {
                     lastChapter = foundChapter
                 }
                 foundChapter = chapter
-            } else if (chapter.startTime <= timeMs) {
+            } else if (chapter.startTime <= time) {
                 lastChapter = chapter
             } else {
                 return lastChapter
@@ -39,51 +43,47 @@ data class Chapters(private val items: List<Chapter> = emptyList()) {
         return lastChapter
     }
 
-    fun getChapter(time: Int): Chapter? {
-        if (isEmpty) {
-            return null
-        }
-        val finalTime = if (time < 0) 0 else time
-        var foundChapter: Chapter? = null
-        for (chapter in items) {
-            if (chapter.containsTime(finalTime)) {
-                foundChapter = chapter
-            }
-        }
-        return foundChapter
+    fun getChapter(time: Duration): Chapter? {
+        val finalTime = time.coerceAtLeast(Duration.ZERO)
+        return firstOrNull { chapter -> finalTime in chapter }
     }
 
-    fun getChapterIndex(time: Int): Int {
-        if (isEmpty) {
-            return -1
-        }
-        val finalTime = if (time < 0) 0 else time
-        var foundIndex = -1
-        var index = 0
-        for (chapter in items) {
-            if (chapter.containsTime(finalTime)) {
-                foundIndex = index
-            }
-            index++
-        }
-        return foundIndex
+    fun getChapterIndex(time: Duration): Int {
+        val finalTime = time.coerceAtLeast(Duration.ZERO)
+        return indexOfFirst { chapter -> finalTime in chapter }
     }
 
-    fun getList(): List<Chapter> {
-        return items
-    }
-
-    fun getChapterSummary(time: Int): String {
-        val chapterSize = items.size
+    fun getChapterSummary(time: Duration): ChapterSummaryData {
         val chapterIndex = getChapterIndex(time)
-        return if (chapterIndex == -1) "" else "${chapterIndex + 1} of $chapterSize"
+        return ChapterSummaryData(chapterIndex + 1, size)
     }
 
-    fun isFirstChapter(time: Int): Boolean {
+    fun isFirstChapter(time: Duration): Boolean {
         return getChapterIndex(time) == 0
     }
 
-    fun isLastChapter(time: Int): Boolean {
-        return getChapterIndex(time) == items.size - 1
+    fun isLastChapter(time: Duration): Boolean {
+        return getChapterIndex(time) == size - 1
+    }
+
+    fun skippedChaptersDuration(time: Duration): Duration {
+        return if (FeatureFlag.isEnabled(Feature.DESELECT_CHAPTERS)) {
+            items
+                .filter { !it.selected && it.endTime > time }
+                .fold(Duration.ZERO) { duration, chapter ->
+                    duration + if (time in chapter) {
+                        chapter.endTime - time
+                    } else {
+                        chapter.duration
+                    }
+                }
+        } else {
+            Duration.ZERO
+        }
     }
 }
+
+data class ChapterSummaryData(
+    val currentIndex: Int = -1,
+    val size: Int = 0,
+)

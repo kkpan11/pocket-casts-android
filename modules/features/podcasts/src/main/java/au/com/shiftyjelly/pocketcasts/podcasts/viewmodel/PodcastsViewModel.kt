@@ -3,20 +3,26 @@ package au.com.shiftyjelly.pocketcasts.podcasts.viewmodel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
+import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.entity.Folder
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
+import au.com.shiftyjelly.pocketcasts.models.entity.SuggestedFolder
 import au.com.shiftyjelly.pocketcasts.models.to.FolderItem
 import au.com.shiftyjelly.pocketcasts.models.to.RefreshState
 import au.com.shiftyjelly.pocketcasts.models.to.SignInState
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType
+import au.com.shiftyjelly.pocketcasts.podcasts.view.folders.toFolders
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.preferences.model.BadgeType
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.FolderManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
+import au.com.shiftyjelly.pocketcasts.repositories.podcast.SuggestedFoldersManager
 import au.com.shiftyjelly.pocketcasts.repositories.user.UserManager
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import com.jakewharton.rxrelay2.BehaviorRelay
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.reactivex.BackpressureStrategy
@@ -28,11 +34,15 @@ import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.rx2.asObservable
 import timber.log.Timber
+import au.com.shiftyjelly.pocketcasts.podcasts.view.folders.Folder as SuggestedFolderModel
 
 @HiltViewModel
 class PodcastsViewModel
@@ -41,7 +51,8 @@ class PodcastsViewModel
     private val episodeManager: EpisodeManager,
     private val folderManager: FolderManager,
     private val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
+    private val suggestedFoldersManager: SuggestedFoldersManager,
     userManager: UserManager,
 ) : ViewModel(), CoroutineScope {
     var isFragmentChangingConfigurations: Boolean = false
@@ -56,11 +67,9 @@ class PodcastsViewModel
         val isSignedInAsPlusOrPatron: Boolean,
     )
 
-    val signInState: LiveData<SignInState> = userManager.getSignInState().toLiveData()
-
     val folderState: LiveData<FolderState> = combineLatest(
         // monitor all subscribed podcasts, get the podcast in 'Episode release date' as the rest can be done in memory
-        podcastManager.observePodcastsOrderByLatestEpisode(),
+        podcastManager.podcastsOrderByLatestEpisodeRxFlowable(),
         // monitor all the folders
         folderManager.observeFolders()
             .switchMap { folders ->
@@ -70,7 +79,7 @@ class PodcastsViewModel
                     // monitor the folder podcasts
                     val observeFolderPodcasts = folders.map { folder ->
                         podcastManager
-                            .observePodcastsInFolderOrderByUserChoice(folder)
+                            .podcastsInFolderOrderByUserChoiceRxFlowable(folder)
                             .map { podcasts ->
                                 FolderItem.Folder(
                                     folder = folder,
@@ -126,12 +135,22 @@ class PodcastsViewModel
     val folder: Folder?
         get() = folderState.value?.folder
 
+    private val _suggestedFoldersState = MutableStateFlow<SuggestedFoldersState>(SuggestedFoldersState.Idle)
+    val suggestedFoldersState: SuggestedFoldersState
+        get() = _suggestedFoldersState.value
+
+    val userSuggestedFoldersState: Flow<Pair<SignInState, SuggestedFoldersState>> = userManager.getSignInState().asFlow()
+        .combine(_suggestedFoldersState) { signIn, suggestedFolders ->
+            Pair(signIn, suggestedFolders)
+        }
+
     private fun buildHomeFolderItems(podcasts: List<Podcast>, folders: List<FolderItem>, podcastSortType: PodcastsSortType): List<FolderItem> {
         if (podcastSortType == PodcastsSortType.EPISODE_DATE_NEWEST_TO_OLDEST) {
+            val folderUuids = folders.mapTo(mutableSetOf()) { it.uuid }
             val items = mutableListOf<FolderItem>()
-            val uuidToFolder = folders.associateBy({ it.uuid }, { it }).toMutableMap()
+            val uuidToFolder = folders.associateByTo(mutableMapOf(), FolderItem::uuid)
             for (podcast in podcasts) {
-                if (podcast.folderUuid == null) {
+                if (podcast.folderUuid == null || !folderUuids.contains(podcast.folderUuid)) {
                     items.add(FolderItem.Podcast(podcast))
                 } else {
                     // add the folder in the position of the podcast with the latest release date
@@ -173,8 +192,8 @@ class PodcastsViewModel
             .toFlowable(BackpressureStrategy.LATEST)
             .switchMap { badgeType ->
                 return@switchMap when (badgeType) {
-                    BadgeType.ALL_UNFINISHED -> episodeManager.getPodcastUuidToBadgeUnfinished()
-                    BadgeType.LATEST_EPISODE -> episodeManager.getPodcastUuidToBadgeLatest()
+                    BadgeType.ALL_UNFINISHED -> episodeManager.getPodcastUuidToBadgeUnfinishedRxFlowable()
+                    BadgeType.LATEST_EPISODE -> episodeManager.getPodcastUuidToBadgeLatestRxFlowable()
                     else -> Flowable.just(emptyMap())
                 }
             }.toLiveData()
@@ -211,7 +230,7 @@ class PodcastsViewModel
                 }
             }
         } catch (ex: IndexOutOfBoundsException) {
-            Timber.e("Move folder item failed.", ex)
+            Timber.e("Move folder item failed: $ex")
         }
 
         return adapterState.toList()
@@ -244,7 +263,7 @@ class PodcastsViewModel
 
         val folder = folder
         if (folder == null) {
-            settings.podcastsSortType.set(PodcastsSortType.DRAG_DROP, needsSync = true)
+            settings.podcastsSortType.set(PodcastsSortType.DRAG_DROP, updateModifiedAt = true)
         } else {
             folderManager.updateSortType(folderUuid = folder.uuid, podcastsSortType = PodcastsSortType.DRAG_DROP)
         }
@@ -275,9 +294,44 @@ class PodcastsViewModel
     fun trackFolderShown(folderUuid: String) {
         launch {
             val properties = HashMap<String, Any>()
-            properties[SORT_ORDER_KEY] = (folderManager.findByUuid(folderUuid)?.podcastsSortType ?: PodcastsSortType.DATE_ADDED_OLDEST_TO_NEWEST).analyticsValue
+            properties[SORT_ORDER_KEY] = (folderManager.findByUuid(folderUuid)?.podcastsSortType ?: PodcastsSortType.DATE_ADDED_NEWEST_TO_OLDEST).analyticsValue
             properties[NUMBER_OF_PODCASTS_KEY] = folderManager.findFolderPodcastsSorted(folderUuid).size
             analyticsTracker.track(AnalyticsEvent.FOLDER_SHOWN, properties)
+        }
+    }
+
+    suspend fun loadSuggestedFolders() {
+        if (FeatureFlag.isEnabled(Feature.SUGGESTED_FOLDERS)) {
+            _suggestedFoldersState.emit(SuggestedFoldersState.Loading)
+            suggestedFoldersManager.getSuggestedFolders().collect { folders ->
+                if (!folders.isEmpty()) {
+                    _suggestedFoldersState.emit(SuggestedFoldersState.Loaded(folders))
+                }
+            }
+        }
+    }
+
+    fun refreshSuggestedFolders() {
+        viewModelScope.launch {
+            if (FeatureFlag.isEnabled(Feature.SUGGESTED_FOLDERS)) {
+                val uuids = podcastManager.findSubscribedUuids()
+                suggestedFoldersManager.refreshSuggestedFolders(uuids)
+            }
+        }
+    }
+
+    fun showSuggestedFoldersPaywallOnOpen(isSignedInAsPlusOrPatron: Boolean) =
+        FeatureFlag.isEnabled(Feature.SUGGESTED_FOLDERS) && !isSignedInAsPlusOrPatron && settings.suggestedFolderPaywallDismissTime.value == 0L
+
+    sealed class SuggestedFoldersState {
+        data object Idle : SuggestedFoldersState()
+        data object Loading : SuggestedFoldersState()
+        data class Loaded(private val folders: List<SuggestedFolder>) : SuggestedFoldersState() {
+            private val convertedFolders: List<SuggestedFolderModel> by lazy {
+                folders.toFolders()
+            }
+
+            fun folders(): List<SuggestedFolderModel> = convertedFolders
         }
     }
 

@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,7 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -38,12 +37,16 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
+import au.com.shiftyjelly.pocketcasts.compose.CallOnce
 import au.com.shiftyjelly.pocketcasts.compose.bars.NavigationButton
 import au.com.shiftyjelly.pocketcasts.compose.bars.ThemedTopAppBar
 import au.com.shiftyjelly.pocketcasts.compose.components.GradientIcon
 import au.com.shiftyjelly.pocketcasts.compose.components.TextH30
 import au.com.shiftyjelly.pocketcasts.compose.components.TextP50
+import au.com.shiftyjelly.pocketcasts.compose.extensions.contentWithoutConsumedInsets
 import au.com.shiftyjelly.pocketcasts.compose.preview.ThemePreviewParameterProvider
 import au.com.shiftyjelly.pocketcasts.compose.theme
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
@@ -69,50 +72,57 @@ class BatteryRestrictionsSettingsFragment : BaseFragment() {
     @Inject
     lateinit var batteryRestrictions: SystemBatteryRestrictions
 
+    @Inject
+    lateinit var analyticsTracker: AnalyticsTracker
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View =
-        ComposeView(requireContext()).apply {
-            setContent {
-                AppThemeWithBackground(theme.activeTheme) {
-                    var isUnrestricted by remember { mutableStateOf(batteryRestrictions.isUnrestricted()) }
-                    DisposableEffect(this) {
-                        val observer = LifecycleEventObserver { _, event ->
-                            if (event == Lifecycle.Event.ON_RESUME) {
-                                isUnrestricted = batteryRestrictions.isUnrestricted()
-                            }
-                        }
-
-                        lifecycle.addObserver(observer)
-                        onDispose {
-                            lifecycle.removeObserver(observer)
-                        }
+    ) = contentWithoutConsumedInsets {
+        AppThemeWithBackground(theme.activeTheme) {
+            CallOnce {
+                analyticsTracker.track(AnalyticsEvent.BATTERY_RESTRICTIONS_SHOWN)
+            }
+            var isUnrestricted by remember { mutableStateOf(batteryRestrictions.isUnrestricted()) }
+            DisposableEffect(this) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        isUnrestricted = batteryRestrictions.isUnrestricted()
                     }
+                }
 
-                    val navigationButton = if (arguments?.getBoolean(ARG_CLOSE_BUTTON) == true) {
-                        NavigationButton.Close
-                    } else {
-                        NavigationButton.Back
-                    }
-                    Page(
-                        isUnrestricted = isUnrestricted,
-                        navigationButton = navigationButton,
-                        onBackPressed = {
-                            @Suppress("DEPRECATION")
-                            activity?.onBackPressed()
-                        },
-                        onClick = { batteryRestrictions.promptToUpdateBatteryRestriction(context) },
-                        openUrl = { url ->
-                            startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(url)),
-                            )
-                        },
-                    )
+                lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycle.removeObserver(observer)
                 }
             }
+
+            val navigationButton = if (arguments?.getBoolean(ARG_CLOSE_BUTTON) == true) {
+                NavigationButton.Close
+            } else {
+                NavigationButton.Back
+            }
+            val context = LocalContext.current
+            Page(
+                isUnrestricted = isUnrestricted,
+                navigationButton = navigationButton,
+                onBackPressed = {
+                    @Suppress("DEPRECATION")
+                    activity?.onBackPressed()
+                },
+                onClick = {
+                    analyticsTracker.track(AnalyticsEvent.BATTERY_RESTRICTIONS_TOGGLED, mapOf("current_status" to batteryRestrictions.status.analyticsValue))
+                    batteryRestrictions.promptToUpdateBatteryRestriction(context)
+                },
+                openUrl = { url ->
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+                    )
+                },
+            )
         }
+    }
 }
 
 @Composable

@@ -32,7 +32,7 @@ import au.com.shiftyjelly.pocketcasts.repositories.shownotes.ShowNotesManager
 import au.com.shiftyjelly.pocketcasts.servers.shownotes.ShowNotesState
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import au.com.shiftyjelly.pocketcasts.ui.theme.ThemeColor
-import au.com.shiftyjelly.pocketcasts.utils.extensions.combine6
+import au.com.shiftyjelly.pocketcasts.utils.extensions.combine
 import au.com.shiftyjelly.pocketcasts.views.helper.CloudDeleteHelper
 import au.com.shiftyjelly.pocketcasts.wear.ui.player.AudioOutputSelectorHelper
 import au.com.shiftyjelly.pocketcasts.wear.ui.player.StreamingConfirmationScreen
@@ -137,11 +137,11 @@ class EpisodeViewModel @Inject constructor(
         val episodeUuid = savedStateHandle.get<String>(EpisodeScreenFlow.episodeUuidArgument)
             ?: throw IllegalStateException("EpisodeViewModel must have an episode uuid in the SavedStateHandle")
 
-        val episodeFlow = episodeManager.observeEpisodeByUuid(episodeUuid)
+        val episodeFlow = episodeManager.findEpisodeByUuidFlow(episodeUuid)
 
         val podcastFlow = episodeFlow
             .filterIsInstance<PodcastEpisode>()
-            .map { podcastManager.findPodcastByUuidSuspend(it.podcastUuid) }
+            .map { podcastManager.findPodcastByUuid(it.podcastUuid) }
 
         val isPlayingEpisodeFlow = playbackManager.playbackStateRelay.asFlow()
             .filter { it.episodeUuid == episodeUuid }
@@ -173,7 +173,7 @@ class EpisodeViewModel @Inject constructor(
                 }
             }
 
-        stateFlow = combine6(
+        stateFlow = combine(
             episodeFlow,
             // Emitting a value "onStart" for the flows that shouldn't block the UI
             podcastFlow.onStart { emit(null) },
@@ -283,7 +283,7 @@ class EpisodeViewModel @Inject constructor(
             } else if (!episode.isDownloaded) {
                 episode.autoDownloadStatus =
                     PodcastEpisode.AUTO_DOWNLOAD_STATUS_MANUAL_OVERRIDE_WIFI
-                downloadManager.addEpisodeToQueue(episode, fromString, true)
+                downloadManager.addEpisodeToQueue(episode, fromString, fireEvent = true, source = sourceView)
 
                 episodeAnalytics.trackEvent(
                     event = AnalyticsEvent.EPISODE_DOWNLOAD_QUEUED,
@@ -297,9 +297,9 @@ class EpisodeViewModel @Inject constructor(
     private suspend fun clearErrors(episode: BaseEpisode) {
         withContext(Dispatchers.IO) {
             if (episode is PodcastEpisode) {
-                episodeManager.clearDownloadError(episode)
+                episodeManager.clearDownloadErrorBlocking(episode)
             }
-            episodeManager.clearPlaybackError(episode)
+            episodeManager.clearPlaybackErrorBlocking(episode)
         }
     }
 
@@ -339,7 +339,6 @@ class EpisodeViewModel @Inject constructor(
             showStreamingConfirmation()
         } else {
             playAttempt?.cancel()
-
             playAttempt = applicationScope.launch { audioOutputSelectorHelper.attemptPlay(::play) }
         }
     }
@@ -348,7 +347,6 @@ class EpisodeViewModel @Inject constructor(
         val confirmedStreaming = result == StreamingConfirmationScreen.Result.CONFIRMED
         if (confirmedStreaming && !playbackManager.isPlaying()) {
             playAttempt?.cancel()
-
             playAttempt = applicationScope.launch { audioOutputSelectorHelper.attemptPlay(::play) }
         }
     }
@@ -426,14 +424,14 @@ class EpisodeViewModel @Inject constructor(
         }
         viewModelScope.launch(Dispatchers.IO) {
             if (episode.isArchived) {
-                episodeManager.unarchive(episode)
+                episodeManager.unarchiveBlocking(episode)
                 episodeAnalytics.trackEvent(
                     AnalyticsEvent.EPISODE_UNARCHIVED,
                     sourceView,
                     episode.uuid,
                 )
             } else {
-                episodeManager.archive(episode, playbackManager)
+                episodeManager.archiveBlocking(episode, playbackManager)
                 episodeAnalytics.trackEvent(
                     AnalyticsEvent.EPISODE_ARCHIVED,
                     sourceView,
@@ -460,10 +458,10 @@ class EpisodeViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             (stateFlow.value as? State.Loaded)?.episode?.let { episode ->
                 val event = if (episode.playingStatus == EpisodePlayingStatus.COMPLETED) {
-                    episodeManager.markAsNotPlayed(episode)
+                    episodeManager.markAsNotPlayedBlocking(episode)
                     AnalyticsEvent.EPISODE_MARKED_AS_UNPLAYED
                 } else {
-                    episodeManager.markAsPlayed(episode, playbackManager, podcastManager)
+                    episodeManager.markAsPlayedBlocking(episode, playbackManager, podcastManager)
                     AnalyticsEvent.EPISODE_MARKED_AS_PLAYED
                 }
                 episodeAnalytics.trackEvent(event, sourceView, episode.uuid)

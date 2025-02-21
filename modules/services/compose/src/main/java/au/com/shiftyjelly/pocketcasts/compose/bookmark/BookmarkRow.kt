@@ -1,5 +1,6 @@
 package au.com.shiftyjelly.pocketcasts.compose.bookmark
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,28 +10,35 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Checkbox
 import androidx.compose.material.Divider
 import androidx.compose.material.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
 import au.com.shiftyjelly.pocketcasts.compose.buttons.TimePlayButton
 import au.com.shiftyjelly.pocketcasts.compose.buttons.TimePlayButtonColors
 import au.com.shiftyjelly.pocketcasts.compose.buttons.TimePlayButtonStyle
-import au.com.shiftyjelly.pocketcasts.compose.components.PodcastImage
+import au.com.shiftyjelly.pocketcasts.compose.components.EpisodeImage
 import au.com.shiftyjelly.pocketcasts.compose.components.TextH40
 import au.com.shiftyjelly.pocketcasts.compose.components.TextH70
 import au.com.shiftyjelly.pocketcasts.compose.theme
+import au.com.shiftyjelly.pocketcasts.models.entity.BaseEpisode
 import au.com.shiftyjelly.pocketcasts.models.entity.Bookmark
+import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
 import au.com.shiftyjelly.pocketcasts.utils.extensions.toLocalizedFormatPattern
 import com.airbnb.android.showkase.annotation.ShowkaseComposable
 import java.util.Date
+import au.com.shiftyjelly.pocketcasts.images.R as IR
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
 sealed class BookmarkRowColors {
@@ -99,6 +107,7 @@ sealed class BookmarkRowColors {
 @Composable
 fun BookmarkRow(
     bookmark: Bookmark,
+    episode: BaseEpisode?,
     isMultiSelecting: () -> Boolean,
     isSelected: (Bookmark) -> Boolean,
     onPlayClick: (Bookmark) -> Unit,
@@ -107,6 +116,9 @@ fun BookmarkRow(
     timePlayButtonStyle: TimePlayButtonStyle,
     timePlayButtonColors: TimePlayButtonColors,
     showIcon: Boolean,
+    useEpisodeArtwork: Boolean,
+    isDarkTheme: Boolean,
+    showEpisodeTitle: Boolean = false,
 ) {
     Column(
         modifier = modifier,
@@ -141,10 +153,20 @@ fun BookmarkRow(
 
             if (showIcon) {
                 Box(modifier = Modifier.padding(start = 16.dp)) {
-                    PodcastImage(
-                        uuid = bookmark.podcastUuid,
-                        modifier = modifier.size(56.dp),
-                    )
+                    if (episode != null) {
+                        EpisodeImage(
+                            episode = episode,
+                            corners = 8.dp,
+                            useEpisodeArtwork = useEpisodeArtwork,
+                            modifier = modifier.size(56.dp),
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(if (isDarkTheme) IR.drawable.defaultartwork_dark else IR.drawable.defaultartwork),
+                            contentDescription = bookmark.title,
+                            modifier = modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
+                        )
+                    }
                 }
             }
 
@@ -153,7 +175,8 @@ fun BookmarkRow(
                     .weight(1f)
                     .padding(horizontal = 16.dp),
             ) {
-                if (bookmark.episodeTitle.isNotEmpty()) {
+                val shouldShowEpisodeTitle = showEpisodeTitle && bookmark.episodeTitle.isNotEmpty()
+                if (shouldShowEpisodeTitle) {
                     TextH70(
                         text = bookmark.episodeTitle,
                         color = colors.secondaryTextColor(),
@@ -164,7 +187,7 @@ fun BookmarkRow(
 
                 Spacer(
                     modifier = Modifier.padding(
-                        top = if (bookmark.episodeTitle.isNotEmpty()) 4.dp else 16.dp,
+                        top = if (shouldShowEpisodeTitle) 4.dp else 16.dp,
                     ),
                 )
 
@@ -172,6 +195,7 @@ fun BookmarkRow(
                     text = bookmark.title,
                     color = colors.primaryTextColor(),
                     maxLines = 2,
+                    lineHeight = 18.sp,
                 )
 
                 TextH70(
@@ -183,7 +207,7 @@ fun BookmarkRow(
 
                 Spacer(
                     modifier = Modifier.padding(
-                        bottom = if (bookmark.episodeTitle.isNotEmpty()) 8.dp else 16.dp,
+                        bottom = if (shouldShowEpisodeTitle) 8.dp else 16.dp,
                     ),
                 )
             }
@@ -234,6 +258,10 @@ private fun BookmarkRowNormalPreview(themeType: Theme.ThemeType) {
                 title = "Bookmark Title",
                 createdAt = Date(),
             ),
+            episode = PodcastEpisode(
+                uuid = "",
+                publishedDate = Date(),
+            ),
             isMultiSelecting = { false },
             isSelected = { false },
             onPlayClick = {},
@@ -242,6 +270,8 @@ private fun BookmarkRowNormalPreview(themeType: Theme.ThemeType) {
             timePlayButtonStyle = TimePlayButtonStyle.Outlined,
             timePlayButtonColors = TimePlayButtonColors.Default,
             showIcon = false,
+            useEpisodeArtwork = false,
+            isDarkTheme = false,
         )
     }
 }
@@ -260,6 +290,10 @@ fun BookmarkRowPlayerPreview() {
                 title = "Bookmark Title",
                 createdAt = Date(),
             ),
+            episode = PodcastEpisode(
+                uuid = "",
+                publishedDate = Date(),
+            ),
             isMultiSelecting = { false },
             isSelected = { false },
             onPlayClick = {},
@@ -267,7 +301,9 @@ fun BookmarkRowPlayerPreview() {
             colors = BookmarkRowColors.Player,
             timePlayButtonStyle = TimePlayButtonStyle.Solid,
             timePlayButtonColors = TimePlayButtonColors.Player(textColor = Color.Black),
-            showIcon = false,
+            showIcon = true,
+            useEpisodeArtwork = false,
+            isDarkTheme = false,
         )
     }
 }

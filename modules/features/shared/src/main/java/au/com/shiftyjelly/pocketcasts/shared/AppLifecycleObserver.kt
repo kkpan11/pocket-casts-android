@@ -9,12 +9,12 @@ import au.com.shiftyjelly.pocketcasts.analytics.AppLifecycleAnalytics
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.di.ApplicationScope
 import au.com.shiftyjelly.pocketcasts.utils.AppPlatform
-import au.com.shiftyjelly.pocketcasts.utils.PackageUtil
 import au.com.shiftyjelly.pocketcasts.utils.Util
 import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import au.com.shiftyjelly.pocketcasts.utils.featureflag.providers.DefaultReleaseFeatureProvider
 import au.com.shiftyjelly.pocketcasts.utils.featureflag.providers.FirebaseRemoteFeatureProvider
 import au.com.shiftyjelly.pocketcasts.utils.featureflag.providers.PreferencesFeatureProvider
+import au.com.shiftyjelly.pocketcasts.utils.getVersionCode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -24,40 +24,43 @@ class AppLifecycleObserver constructor(
     @ApplicationContext private val appContext: Context,
     private val appLifecycleAnalytics: AppLifecycleAnalytics,
     private val appLifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get(),
-    private val preferencesFeatureProvider: PreferencesFeatureProvider,
+    private val applicationScope: CoroutineScope,
     private val defaultReleaseFeatureProvider: DefaultReleaseFeatureProvider,
     private val firebaseRemoteFeatureProvider: FirebaseRemoteFeatureProvider,
-    private val packageUtil: PackageUtil,
+    private val networkConnectionWatcher: NetworkConnectionWatcherImpl,
+    private val versionCode: Int,
+    private val preferencesFeatureProvider: PreferencesFeatureProvider,
     private val settings: Settings,
-    private val applicationScope: CoroutineScope,
 ) : DefaultLifecycleObserver {
 
     @Inject
     constructor(
         @ApplicationContext appContext: Context,
-        appLifecycleAnalytics: AppLifecycleAnalytics,
-        preferencesFeatureProvider: PreferencesFeatureProvider,
-        defaultReleaseFeatureProvider: DefaultReleaseFeatureProvider,
-        firebaseRemoteFeatureProvider: FirebaseRemoteFeatureProvider,
-        packageUtil: PackageUtil,
-        settings: Settings,
         @ApplicationScope applicationScope: CoroutineScope,
+        appLifecycleAnalytics: AppLifecycleAnalytics,
+        defaultReleaseFeatureProvider: DefaultReleaseFeatureProvider,
+        networkConnectionWatcher: NetworkConnectionWatcherImpl,
+        firebaseRemoteFeatureProvider: FirebaseRemoteFeatureProvider,
+        preferencesFeatureProvider: PreferencesFeatureProvider,
+        settings: Settings,
     ) : this(
         appContext = appContext,
+        applicationScope = applicationScope,
         appLifecycleAnalytics = appLifecycleAnalytics,
         appLifecycleOwner = ProcessLifecycleOwner.get(),
-        preferencesFeatureProvider = preferencesFeatureProvider,
         defaultReleaseFeatureProvider = defaultReleaseFeatureProvider,
         firebaseRemoteFeatureProvider = firebaseRemoteFeatureProvider,
-        packageUtil = packageUtil,
+        networkConnectionWatcher = networkConnectionWatcher,
+        versionCode = appContext.getVersionCode(),
+        preferencesFeatureProvider = preferencesFeatureProvider,
         settings = settings,
-        applicationScope = applicationScope,
     )
 
     fun setup() {
         appLifecycleOwner.lifecycle.addObserver(this)
         handleNewInstallOrUpgrade()
         setupFeatureFlags()
+        networkConnectionWatcher.startWatching()
     }
 
     override fun onResume(owner: LifecycleOwner) {
@@ -73,6 +76,7 @@ class AppLifecycleObserver constructor(
 
     override fun onDestroy(owner: LifecycleOwner) {
         applicationScope.cancel("Application onTerminate")
+        networkConnectionWatcher.stopWatching()
         super.onDestroy(owner)
     }
 
@@ -90,7 +94,6 @@ class AppLifecycleObserver constructor(
 
     private fun handleNewInstallOrUpgrade() {
         // Track app upgrade and install
-        val versionCode = packageUtil.getVersionCode(appContext)
         val previousVersionCode = settings.getMigratedVersionCode()
 
         val isNewInstall = previousVersionCode == 0
@@ -98,7 +101,10 @@ class AppLifecycleObserver constructor(
             appLifecycleAnalytics.onNewApplicationInstall()
 
             // new installs default to not forcing up next to use the dark theme
-            settings.useDarkUpNextTheme.set(false)
+            settings.useDarkUpNextTheme.set(false, updateModifiedAt = false)
+
+            // new installations default to not displaying the tooltip
+            settings.showPodcastRefreshTooltip.set(false, updateModifiedAt = false)
 
             when (getAppPlatform()) {
                 // do nothing because this already defaults to true for all users on automotive
@@ -107,8 +113,13 @@ class AppLifecycleObserver constructor(
                 // do nothing because feature has not been enabled on Wear OS yet
                 AppPlatform.WearOs -> {}
 
-                // For new users we want to auto play when the queue is empty by default
-                AppPlatform.Phone -> settings.autoPlayNextEpisodeOnEmpty.set(true)
+                AppPlatform.Phone -> {
+                    // For new users we want to auto play when the queue is empty by default
+                    settings.autoPlayNextEpisodeOnEmpty.set(true, updateModifiedAt = false)
+
+                    // For new users we want to auto download on follow podcast by default
+                    settings.autoDownloadOnFollowPodcast.set(true, updateModifiedAt = false)
+                }
             }
         } else if (previousVersionCode < versionCode) {
             appLifecycleAnalytics.onApplicationUpgrade(previousVersionCode)

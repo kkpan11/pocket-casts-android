@@ -49,7 +49,12 @@ class WarningsHelper @Inject constructor(
     ): ConfirmationDialog {
         return streamingWarningDialog(onConfirm = {
             applicationScope.launch {
-                playbackManager.playNow(episode = episode, forceStream = true, sourceView = sourceView)
+                playbackManager.playNowSuspend(
+                    episode = episode,
+                    forceStream = true,
+                    showedStreamWarning = true,
+                    sourceView = sourceView,
+                )
                 showBatteryWarningSnackbarIfAppropriate(snackbarParentView)
             }
         })
@@ -114,9 +119,9 @@ class WarningsHelper @Inject constructor(
                     if (!waitForWifi) {
                         it.autoDownloadStatus = PodcastEpisode.AUTO_DOWNLOAD_STATUS_MANUAL_OVERRIDE_WIFI
                     }
-                    downloadManager.addEpisodeToQueue(it, from, true)
+                    downloadManager.addEpisodeToQueue(it, from, fireEvent = true, source = SourceView.UNKNOWN)
                     launch {
-                        episodeManager.unarchive(it)
+                        episodeManager.unarchiveBlocking(it)
                     }
                 }
             }

@@ -46,6 +46,7 @@ import au.com.shiftyjelly.pocketcasts.localization.R as LR
 @Composable
 fun EpisodeChip(
     episode: BaseEpisode,
+    useEpisodeArtwork: Boolean,
     useUpNextIcon: Boolean = true,
     onClick: () -> Unit,
     showImage: Boolean = true,
@@ -85,6 +86,7 @@ fun EpisodeChip(
                 if (showImage) {
                     EpisodeImage(
                         episode = episode,
+                        useEpisodeArtwork = useEpisodeArtwork,
                         modifier = Modifier
                             .size(30.dp)
                             .clip(RoundedCornerShape(4.dp)),
@@ -108,15 +110,12 @@ fun EpisodeChip(
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colors.onPrimary,
                     style = MaterialTheme.typography.button.merge(
-                        @Suppress("DEPRECATION")
-                        (
-                            TextStyle(
-                                platformStyle = PlatformTextStyle(
-                                    // So we can align the top of the text as closely as possible to the image
-                                    includeFontPadding = false,
-                                ),
-                            )
+                        TextStyle(
+                            platformStyle = PlatformTextStyle(
+                                // So we can align the top of the text as closely as possible to the image
+                                includeFontPadding = false,
                             ),
+                        ),
                     ),
                     maxLines = 2,
                 )

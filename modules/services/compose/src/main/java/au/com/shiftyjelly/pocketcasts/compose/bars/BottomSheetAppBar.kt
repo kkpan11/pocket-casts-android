@@ -1,8 +1,13 @@
 package au.com.shiftyjelly.pocketcasts.compose.bars
 
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.material.AppBarDefaults
 import androidx.compose.material.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
 import au.com.shiftyjelly.pocketcasts.compose.theme
@@ -16,7 +21,8 @@ import com.airbnb.android.showkase.annotation.ShowkaseComposable
 fun BottomSheetAppBar(
     title: String? = null,
     navigationButton: NavigationButton = NavigationButton.Back,
-    actions: @Composable RowScope.() -> Unit = {},
+    windowInsets: WindowInsets = AppBarDefaults.topAppBarWindowInsets.only(WindowInsetsSides.Horizontal),
+    actions: @Composable RowScope.(Color) -> Unit = {},
     onNavigationClick: () -> Unit,
 ) {
     ThemedTopAppBar(
@@ -24,6 +30,7 @@ fun BottomSheetAppBar(
         iconColor = MaterialTheme.theme.colors.primaryIcon01,
         textColor = MaterialTheme.theme.colors.primaryText01,
         backgroundColor = MaterialTheme.theme.colors.primaryUi01,
+        windowInsets = windowInsets,
         navigationButton = navigationButton,
         actions = actions,
         onNavigationClick = onNavigationClick,

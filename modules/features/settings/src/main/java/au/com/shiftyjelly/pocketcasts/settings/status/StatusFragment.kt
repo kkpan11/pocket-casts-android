@@ -2,19 +2,20 @@ package au.com.shiftyjelly.pocketcasts.settings.status
 
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.AppBarDefaults
 import androidx.compose.material.Button
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Icon
@@ -26,39 +27,48 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.viewModels
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.com.shiftyjelly.pocketcasts.compose.AppThemeWithBackground
 import au.com.shiftyjelly.pocketcasts.compose.bars.ThemedTopAppBar
+import au.com.shiftyjelly.pocketcasts.compose.extensions.contentWithoutConsumedInsets
 import au.com.shiftyjelly.pocketcasts.compose.theme
+import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.ui.helper.FragmentHostListener
+import au.com.shiftyjelly.pocketcasts.utils.extensions.pxToDp
 import au.com.shiftyjelly.pocketcasts.views.fragments.BaseFragment
 import au.com.shiftyjelly.pocketcasts.views.helper.UiUtil
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import au.com.shiftyjelly.pocketcasts.localization.R as LR
 
 @AndroidEntryPoint
 class StatusFragment : BaseFragment() {
-
+    @Inject
+    lateinit var settings: Settings
     private val viewModel: StatusViewModel by viewModels()
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                UiUtil.hideKeyboard(LocalView.current)
-                AppThemeWithBackground(theme.activeTheme) {
-                    StatusPage(
-                        viewModel = viewModel,
-                        onBackPressed = { closeFragment() },
-                    )
-                }
-            }
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ) = contentWithoutConsumedInsets {
+        UiUtil.hideKeyboard(LocalView.current)
+        val bottomInset = settings.bottomInset.collectAsStateWithLifecycle(initialValue = 0)
+        AppThemeWithBackground(theme.activeTheme) {
+            StatusPage(
+                viewModel = viewModel,
+                bottomInset = bottomInset.value.pxToDp(LocalContext.current).dp,
+                onBackPressed = { closeFragment() },
+            )
         }
     }
 
@@ -68,22 +78,32 @@ class StatusFragment : BaseFragment() {
 }
 
 @Composable
-fun StatusPage(viewModel: StatusViewModel, onBackPressed: () -> Unit) {
-    Column {
-        ThemedTopAppBar(
-            title = stringResource(LR.string.settings_status_page),
-            onNavigationClick = onBackPressed,
-        )
-        StatusPageContent(viewModel = viewModel)
+fun StatusPage(
+    bottomInset: Dp,
+    onBackPressed: () -> Unit,
+    appBarInsets: WindowInsets = AppBarDefaults.topAppBarWindowInsets,
+    viewModel: StatusViewModel = hiltViewModel(),
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(bottom = bottomInset),
+    ) {
+        item {
+            ThemedTopAppBar(
+                title = stringResource(LR.string.settings_status_page),
+                windowInsets = appBarInsets,
+                onNavigationClick = onBackPressed,
+            )
+        }
+        item {
+            StatusPageContent(viewModel = viewModel)
+        }
     }
 }
 
 @Composable
 fun StatusPageContent(viewModel: StatusViewModel) {
-    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
-            .verticalScroll(scrollState)
             .padding(16.dp)
             .fillMaxWidth(),
     ) {

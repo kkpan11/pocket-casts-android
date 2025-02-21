@@ -14,25 +14,16 @@
             android:id="@+id/mainFragment"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:paddingBottom="@dimen/design_bottom_navigation_height"
             android:clipToPadding="false" />
-
-        <!-- Hack: the only way to get the Snackbar in front of the bottom navigation view -->
-        <androidx.coordinatorlayout.widget.CoordinatorLayout
-            android:id="@+id/snackbarFragment"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:paddingBottom="56dp"/>
 
         <au.com.shiftyjelly.pocketcasts.player.view.PlayerBottomSheet
             android:id="@+id/playerBottomSheet"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#000000"
             android:elevation="8dp"
             android:visibility="gone"
             app:behavior_peekHeight="@dimen/miniPlayerPeekHeight"
-            app:layout_behavior="au.com.shiftyjelly.pocketcasts.player.view.PlayerBottomSheetBehavior" />
+            app:layout_behavior="com.google.android.material.bottomsheet.ViewPager2AwareBottomSheetBehavior" />
 
         <com.google.android.material.bottomnavigation.BottomNavigationView
             android:id="@+id/bottomNavigation"
@@ -59,8 +50,7 @@
             android:elevation="8dp"
             app:behavior_peekHeight="0dp"
             app:layout_behavior="au.com.shiftyjelly.pocketcasts.view.LockableBottomSheetBehavior"
-            android:clickable="true"
-            android:translationZ="200dp"/>
+            android:translationZ="200dp" />
 
         <FrameLayout
             android:id="@+id/modalBottomSheet"
@@ -69,6 +59,19 @@
             android:translationZ="200dp"/>
 
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
+
+    <!-- Hack: the only way to get the Snackbar in front of the bottom navigation view -->
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:id="@+id/snackbarFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <View
+        android:id="@+id/fullScreenDarkOverlayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:visibility="gone" />
 
     <au.com.shiftyjelly.pocketcasts.views.component.RadioactiveLineView
         android:id="@+id/radioactiveLineView"

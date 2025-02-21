@@ -3,15 +3,13 @@ package au.com.shiftyjelly.pocketcasts.account.viewmodel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.TracksAnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.type.Subscription
 import au.com.shiftyjelly.pocketcasts.models.type.Subscription.Companion.PLUS_MONTHLY_PRODUCT_ID
 import au.com.shiftyjelly.pocketcasts.models.type.Subscription.Companion.PLUS_YEARLY_PRODUCT_ID
-import au.com.shiftyjelly.pocketcasts.models.type.SubscriptionMapper
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
-import au.com.shiftyjelly.pocketcasts.repositories.subscription.ProductDetailsState
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.PurchaseEvent
 import au.com.shiftyjelly.pocketcasts.repositories.subscription.SubscriptionManager
 import au.com.shiftyjelly.pocketcasts.repositories.sync.LoginResult
@@ -19,8 +17,6 @@ import au.com.shiftyjelly.pocketcasts.repositories.sync.SyncManager
 import au.com.shiftyjelly.pocketcasts.utils.Util
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.rxkotlin.subscribeBy
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 
@@ -29,7 +25,7 @@ class CreateAccountViewModel
 @Inject constructor(
     private val syncManager: SyncManager,
     private val settings: Settings,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     private val podcastManager: PodcastManager,
 ) : AccountViewModel() {
 
@@ -37,7 +33,6 @@ class CreateAccountViewModel
     val subscriptionType = MutableLiveData<SubscriptionType>().apply { value = SubscriptionType.FREE }
     val subscription = MutableLiveData<Subscription?>()
     val newsletter = MutableLiveData<Boolean>().apply { postValue(false) }
-    val termsOfUse = MutableLiveData<Boolean?>()
 
     val createAccountState = MutableLiveData<CreateAccountState>().apply { value = CreateAccountState.CurrentlyValid }
     private val disposables = CompositeDisposable()
@@ -47,12 +42,15 @@ class CreateAccountViewModel
 
     companion object {
         private const val PRODUCT_KEY = "product"
-        private const val IS_FREE_TRIAL_KEY = "is_free_trial"
+        private const val OFFER_TYPE_KEY = "offer_type"
+        private const val OFFER_TYPE_NONE = "none"
+        private const val OFFER_TYPE_FREE_TRIAL = "free_trial"
+        private const val OFFER_TYPE_INTRO_OFFER = "intro_offer"
         private const val ERROR_CODE_KEY = "error_code"
         private const val SOURCE_KEY = "source"
         private const val ENABLED_KEY = "enabled"
 
-        fun trackPurchaseEvent(subscription: Subscription?, purchaseEvent: PurchaseEvent, analyticsTracker: AnalyticsTrackerWrapper) {
+        fun trackPurchaseEvent(subscription: Subscription?, purchaseEvent: PurchaseEvent, analyticsTracker: AnalyticsTracker) {
             val productKey = subscription?.productDetails?.productId?.let {
                 if (it in listOf(PLUS_MONTHLY_PRODUCT_ID, PLUS_YEARLY_PRODUCT_ID)) {
                     // retain short product id for plus subscriptions
@@ -62,11 +60,15 @@ class CreateAccountViewModel
                     it // return full product id for new products
                 }
             } ?: TracksAnalyticsTracker.INVALID_OR_NULL_VALUE
-            val isFreeTrial = subscription is Subscription.WithTrial
+            val offerType = when (subscription) {
+                is Subscription.Trial -> OFFER_TYPE_FREE_TRIAL
+                is Subscription.Intro -> OFFER_TYPE_INTRO_OFFER
+                else -> OFFER_TYPE_NONE
+            }
 
             val analyticsProperties = mapOf(
                 PRODUCT_KEY to productKey,
-                IS_FREE_TRIAL_KEY to isFreeTrial,
+                OFFER_TYPE_KEY to offerType,
             )
 
             when (purchaseEvent) {
@@ -89,32 +91,6 @@ class CreateAccountViewModel
         }
     }
 
-    fun loadSubs() {
-        subscriptionManager.observeProductDetails()
-            .firstOrError()
-            .subscribeBy(
-                onSuccess = { productDetailsState ->
-                    if (productDetailsState is ProductDetailsState.Loaded) {
-                        val subscriptions = productDetailsState.productDetails
-                            .mapNotNull {
-                                Subscription.fromProductDetails(
-                                    productDetails = it,
-                                    isFreeTrialEligible = subscriptionManager.isFreeTrialEligible(SubscriptionMapper.mapProductIdToTier(it.productId)),
-                                )
-                            }
-                        subscriptionManager.getDefaultSubscription(subscriptions)?.let { updateSubscription(it) }
-                        createAccountState.postValue(CreateAccountState.ProductsLoaded(subscriptions))
-                    } else {
-                        errorUpdate(CreateAccountError.CANNOT_LOAD_SUBS, true)
-                    }
-                },
-                onError = {
-                    errorUpdate(CreateAccountError.CANNOT_LOAD_SUBS, true)
-                },
-            )
-            .addTo(disposables)
-    }
-
     private fun errorUpdate(error: CreateAccountError, add: Boolean) {
         val errors = mutableSetOf<CreateAccountError>()
         when (val existingState = createAccountState.value) {
@@ -135,15 +111,6 @@ class CreateAccountViewModel
         } else {
             createAccountState.postValue(newState)
         }
-    }
-
-    fun updateSubscriptionType(value: SubscriptionType) {
-        subscriptionType.value = value
-        createAccountState.postValue(CreateAccountState.SubscriptionTypeChosen)
-    }
-
-    fun updateSubscription(value: Subscription) {
-        subscription.value = value
     }
 
     fun updateEmailRefresh() {
@@ -176,16 +143,8 @@ class CreateAccountViewModel
         )
         newsletter.value = isChecked
         newsletter.value?.let {
-            settings.marketingOptIn.set(it, needsSync = true)
+            settings.marketingOptIn.set(it, updateModifiedAt = true)
         }
-    }
-
-    fun updateTermsOfUse(value: Boolean) {
-        termsOfUse.value = value
-    }
-
-    fun updateStateTotAccountCreated() {
-        createAccountState.value = CreateAccountState.AccountCreated
     }
 
     fun updateStateToFinished() {
@@ -197,17 +156,10 @@ class CreateAccountViewModel
         subscriptionType.value = defaultSubscriptionType
         subscription.value = null
         newsletter.value = false
-        termsOfUse.value = null
     }
 
     fun clearError(error: CreateAccountError) {
         errorUpdate(error, false)
-    }
-
-    fun clearReadyForUpgrade() {
-        clearValues()
-        upgradeMode.value = true
-        subscriptionType.value = SubscriptionType.PLUS
     }
 
     fun currentStateHasError(error: CreateAccountError): Boolean {
@@ -245,31 +197,6 @@ class CreateAccountViewModel
         }
     }
 
-    fun sendCreateSubscriptions() {
-        subscriptionManager.observePurchaseEvents()
-            .firstOrError()
-            .subscribeBy(
-                onSuccess = { purchaseEvent ->
-                    when (purchaseEvent) {
-                        is PurchaseEvent.Success -> {
-                            createAccountState.postValue(CreateAccountState.SubscriptionCreated)
-                        }
-                        is PurchaseEvent.Cancelled -> {
-                            errorUpdate(CreateAccountError.CANCELLED_CREATE_SUB, true)
-                        }
-                        is PurchaseEvent.Failure -> {
-                            errorUpdate(CreateAccountError.CANNOT_CREATE_SUB, true)
-                        }
-                    }
-                    trackPurchaseEvent(subscription.value, purchaseEvent, analyticsTracker)
-                },
-                onError = {
-                    errorUpdate(CreateAccountError.CANNOT_CREATE_SUB, true)
-                },
-            )
-            .addTo(disposables)
-    }
-
     fun onCloseDoneForm() {
         analyticsTracker.track(AnalyticsEvent.ACCOUNT_UPDATED_DISMISSED)
     }
@@ -286,9 +213,9 @@ enum class NewsletterSource(val analyticsValue: String) {
     WELCOME_NEW_ACCOUNT("welcome_new_account"),
 }
 
-enum class SubscriptionType(val value: String, val trackingLabel: String) {
-    FREE("Free", "free"),
-    PLUS("Pocket Casts Plus", "plus"),
+enum class SubscriptionType(val value: String) {
+    FREE("Free"),
+    PLUS("Pocket Casts Plus"),
 }
 
 enum class CreateAccountError {
@@ -307,7 +234,6 @@ sealed class CreateAccountState {
     data class ProductsLoaded(val list: List<Subscription>) : CreateAccountState()
     object AccountCreating : CreateAccountState()
     object AccountCreated : CreateAccountState()
-    object SubscriptionCreating : CreateAccountState()
     object SubscriptionCreated : CreateAccountState()
     object Finished : CreateAccountState()
     data class Failure(val errors: MutableSet<CreateAccountError>, val message: String?) : CreateAccountState()

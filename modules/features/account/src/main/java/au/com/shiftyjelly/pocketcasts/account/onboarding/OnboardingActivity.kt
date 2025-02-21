@@ -5,12 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowCompat
 import au.com.shiftyjelly.pocketcasts.account.onboarding.OnboardingActivityContract.OnboardingFinish
+import au.com.shiftyjelly.pocketcasts.account.viewmodel.OnboardingActivityViewModel
 import au.com.shiftyjelly.pocketcasts.repositories.user.UserManager
 import au.com.shiftyjelly.pocketcasts.settings.onboarding.OnboardingFlow
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
@@ -25,6 +28,8 @@ class OnboardingActivity : AppCompatActivity() {
 
     @Inject lateinit var userManager: UserManager
 
+    private val viewModel: OnboardingActivityViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Make content edge-to-edge
@@ -33,6 +38,9 @@ class OnboardingActivity : AppCompatActivity() {
         setContent {
             val signInState = userManager.getSignInState().asFlow().collectAsState(null)
             val currentSignInState = signInState.value
+
+            val finishState = viewModel.finishState.collectAsState(null)
+            finishState.value?.let { finishWithResult(it) }
 
             if (currentSignInState != null) {
                 val onboardingFlow = remember(savedInstanceState) {
@@ -43,12 +51,17 @@ class OnboardingActivity : AppCompatActivity() {
                     theme.setupThemeForConfig(this, resources.configuration)
                 }
 
+                enableEdgeToEdge()
+
                 OnboardingFlowComposable(
                     theme = theme.activeTheme,
                     flow = onboardingFlow,
-                    exitOnboarding = { finishWithResult(OnboardingFinish.Done) },
+                    exitOnboarding = { viewModel.onExitOnboarding(it) },
                     completeOnboardingToDiscover = { finishWithResult(OnboardingFinish.DoneGoToDiscover) },
                     signInState = currentSignInState,
+                    onUpdateSystemBars = { value ->
+                        enableEdgeToEdge(value.statusBarStyle, value.navigationBarStyle)
+                    },
                 )
             }
         }

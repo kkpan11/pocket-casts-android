@@ -2,6 +2,7 @@ package au.com.shiftyjelly.pocketcasts.repositories.podcast
 
 import au.com.shiftyjelly.pocketcasts.models.entity.Folder
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
+import au.com.shiftyjelly.pocketcasts.models.entity.SuggestedFolderDetails
 import au.com.shiftyjelly.pocketcasts.models.to.FolderItem
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType
 import io.reactivex.Flowable
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 interface FolderManager {
 
     suspend fun create(name: String, color: Int, podcastsSortType: PodcastsSortType, podcastUuids: List<String>): Folder
+    suspend fun overrideFoldersWithSuggested(folders: List<SuggestedFolderDetails>)
     suspend fun delete(folder: Folder)
     suspend fun deleteAll()
     suspend fun upsertSynced(folder: Folder): Folder
@@ -26,11 +28,9 @@ interface FolderManager {
     fun observeFolders(): Flowable<List<Folder>>
     fun findFoldersFlow(): Flow<List<Folder>>
     fun findFoldersSingle(): Single<List<Folder>>
-    fun findByUuidFlowable(uuid: String): Flowable<List<Folder>>
-    fun findByUuidFlow(uuid: String): Flow<List<Folder>>
     suspend fun updatePositions(folders: List<Folder>)
     suspend fun updateSortPosition(folderItems: List<FolderItem>)
-    fun findFoldersToSync(): List<Folder>
-    fun markAllSynced()
-    fun countFolders(): Int
+    fun findFoldersToSyncBlocking(): List<Folder>
+    suspend fun markAllSynced()
+    suspend fun countFolders(): Int
 }

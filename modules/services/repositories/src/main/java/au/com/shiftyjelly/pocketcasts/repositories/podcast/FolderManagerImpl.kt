@@ -3,18 +3,18 @@ package au.com.shiftyjelly.pocketcasts.repositories.podcast
 import au.com.shiftyjelly.pocketcasts.models.db.AppDatabase
 import au.com.shiftyjelly.pocketcasts.models.entity.Folder
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
+import au.com.shiftyjelly.pocketcasts.models.entity.SuggestedFolderDetails
 import au.com.shiftyjelly.pocketcasts.models.to.FolderItem
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType
-import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType.DATE_ADDED_OLDEST_TO_NEWEST
-import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType.DRAG_DROP
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType.EPISODE_DATE_NEWEST_TO_OLDEST
-import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType.NAME_A_TO_Z
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import io.reactivex.Flowable
 import io.reactivex.Single
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
+import kotlin.collections.plus
+import kotlin.collections.sortedBy
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +57,11 @@ class FolderManagerImpl @Inject constructor(
         updateSortPosition(newList)
 
         return newFolder
+    }
+
+    override suspend fun overrideFoldersWithSuggested(folders: List<SuggestedFolderDetails>) {
+        folderDao.replaceAllFolders(folders.toFolders())
+        podcastManager.updateFoldersUuid(folders)
     }
 
     override suspend fun upsertSynced(folder: Folder): Folder {
@@ -115,7 +120,7 @@ class FolderManagerImpl @Inject constructor(
     }
 
     override fun observeFolders(): Flowable<List<Folder>> {
-        return folderDao.observeFolders()
+        return folderDao.findFoldersRxFlowable()
     }
 
     override fun findFoldersFlow(): Flow<List<Folder>> {
@@ -123,15 +128,7 @@ class FolderManagerImpl @Inject constructor(
     }
 
     override fun findFoldersSingle(): Single<List<Folder>> {
-        return folderDao.findFoldersSingle()
-    }
-
-    override fun findByUuidFlowable(uuid: String): Flowable<List<Folder>> {
-        return folderDao.findByUuidFlowable(uuid)
-    }
-
-    override fun findByUuidFlow(uuid: String): Flow<List<Folder>> {
-        return folderDao.findByUuidFlow(uuid)
+        return folderDao.findFoldersRxSingle()
     }
 
     override suspend fun updatePositions(folders: List<Folder>) {
@@ -162,11 +159,11 @@ class FolderManagerImpl @Inject constructor(
         updatePositions(folders)
     }
 
-    override fun findFoldersToSync(): List<Folder> {
-        return folderDao.findNotSynced()
+    override fun findFoldersToSyncBlocking(): List<Folder> {
+        return folderDao.findNotSyncedBlocking()
     }
 
-    override fun markAllSynced() {
+    override suspend fun markAllSynced() {
         folderDao.updateAllSynced()
     }
 
@@ -176,7 +173,7 @@ class FolderManagerImpl @Inject constructor(
         val podcasts = if (sortType == EPISODE_DATE_NEWEST_TO_OLDEST) {
             podcastManager.findPodcastsOrderByLatestEpisode(orderAsc = false)
         } else {
-            podcastManager.findSubscribed()
+            podcastManager.findSubscribedNoOrder()
         }
         val folders = folderDao.findFolders()
         val folderItems = combineFoldersPodcasts(folders, podcasts)
@@ -219,45 +216,20 @@ class FolderManagerImpl @Inject constructor(
         return podcasts.sortedWith(folder.podcastsSortType.podcastComparator)
     }
 
-    private fun buildHomeFolderItems(podcasts: List<Podcast>, folders: List<FolderItem>, podcastSortType: PodcastsSortType): List<FolderItem> {
-        if (podcastSortType == EPISODE_DATE_NEWEST_TO_OLDEST) {
-            val items = mutableListOf<FolderItem>()
-            val uuidToFolder = folders.associateBy({ it.uuid }, { it }).toMutableMap()
-            for (podcast in podcasts) {
-                if (podcast.folderUuid == null) {
-                    items.add(FolderItem.Podcast(podcast))
-                } else {
-                    // add the folder in the position of the podcast with the latest release date
-                    val folder = uuidToFolder.remove(podcast.folderUuid)
-                    if (folder != null) {
-                        items.add(folder)
-                    }
-                }
-            }
-            if (uuidToFolder.isNotEmpty()) {
-                items.addAll(uuidToFolder.values)
-            }
-            return items
-        } else {
-            val folderUuids = folders.map { it.uuid }.toHashSet()
-            val items = podcasts
-                // add the podcasts not in a folder or if the folder doesn't exist
-                .filter { podcast -> podcast.folderUuid == null || !folderUuids.contains(podcast.folderUuid) }
-                .map { FolderItem.Podcast(it) }
-                .toMutableList<FolderItem>()
-                // add the folders
-                .apply { addAll(folders) }
+    override suspend fun countFolders() = folderDao.count()
 
-            val itemsSorted = when (podcastSortType) {
-                NAME_A_TO_Z -> items.sortedWith(compareBy { PodcastsSortType.cleanStringForSort(it.title) })
-                DATE_ADDED_OLDEST_TO_NEWEST -> items.sortedWith(compareBy { it.addedDate })
-                DRAG_DROP -> items.sortedWith(compareBy { it.sortPosition })
-                else -> items
-            }
-
-            return itemsSorted
+    private fun List<SuggestedFolderDetails>.toFolders(): List<Folder> {
+        return this.map { suggestedFolder ->
+            Folder(
+                uuid = suggestedFolder.uuid,
+                name = suggestedFolder.name,
+                color = suggestedFolder.color,
+                addedDate = Date(),
+                sortPosition = 0,
+                podcastsSortType = suggestedFolder.podcastsSortType,
+                deleted = false,
+                syncModified = System.currentTimeMillis(),
+            )
         }
     }
-
-    override fun countFolders() = folderDao.count()
 }

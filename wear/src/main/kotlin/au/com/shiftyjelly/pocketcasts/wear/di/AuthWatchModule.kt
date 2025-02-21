@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package au.com.shiftyjelly.pocketcasts.wear.di
 
 import android.content.Context
@@ -23,10 +25,11 @@ object AuthWatchModule {
     @Provides
     fun providesTokenBundleRepository(
         wearDataLayerRegistry: WearDataLayerRegistry,
+        serializer: WatchSyncAuthDataSerializer,
     ): TokenBundleRepository<WatchSyncAuthData?> {
         return TokenBundleRepositoryImpl.create(
             registry = wearDataLayerRegistry,
-            serializer = WatchSyncAuthDataSerializer,
+            serializer = serializer,
         )
     }
 

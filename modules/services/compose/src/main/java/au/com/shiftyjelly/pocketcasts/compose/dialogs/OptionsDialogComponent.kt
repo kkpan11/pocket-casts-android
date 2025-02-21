@@ -1,15 +1,19 @@
 package au.com.shiftyjelly.pocketcasts.compose.dialogs
 
 import androidx.annotation.ColorInt
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
@@ -31,16 +35,22 @@ import au.com.shiftyjelly.pocketcasts.compose.theme
 import au.com.shiftyjelly.pocketcasts.images.R as IR
 
 @Composable
-fun OptionsDialogComponent(title: String?, @ColorInt iconColor: Int?, options: List<OptionsDialogOption>, modifier: Modifier = Modifier) {
+fun OptionsDialogComponent(
+    title: String?,
+    @ColorInt iconColor: Int?,
+    options: List<OptionsDialogOption>,
+    modifier: Modifier = Modifier,
+    dividerColor: Color? = null,
+) {
     Column(
-        modifier = modifier.padding(bottom = 16.dp),
+        modifier = modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)),
     ) {
         OptionsDialogHeader(title)
         options.forEachIndexed { index, option ->
             Column {
                 OptionsDialogRow(option = option, iconColor = option.imageColor ?: iconColor, index = index)
                 if (index != options.size - 1) {
-                    HorizontalDivider()
+                    HorizontalDivider(color = dividerColor)
                 }
             }
         }
@@ -70,8 +80,7 @@ private fun OptionsDialogRow(option: OptionsDialogOption, @ColorInt iconColor: I
             .height(74.dp)
             .fillMaxWidth()
             .clickable(enabled = option.click != null) { option.click?.invoke() }
-            .testTag("option_$index")
-            .background(MaterialTheme.theme.colors.primaryUi01),
+            .testTag("option_$index"),
     ) {
         if (option.imageId != null) {
             Spacer(modifier = Modifier.width(20.dp))

@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.toLiveData
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.entity.Playlist
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.EpisodeManager
@@ -22,7 +22,7 @@ import kotlinx.coroutines.runBlocking
 @HiltViewModel
 class FiltersFragmentViewModel @Inject constructor(
     val playlistManager: PlaylistManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     episodeManager: EpisodeManager,
     playbackManager: PlaybackManager,
 ) : ViewModel(), CoroutineScope {
@@ -37,10 +37,10 @@ class FiltersFragmentViewModel @Inject constructor(
     override val coroutineContext: CoroutineContext
         get() = Dispatchers.Default
 
-    val filters: LiveData<List<Playlist>> = playlistManager.observeAll().toLiveData()
+    val filters: LiveData<List<Playlist>> = playlistManager.findAllRxFlowable().toLiveData()
 
     val countGenerator = { playlist: Playlist ->
-        playlistManager.countEpisodesRx(playlist, episodeManager, playbackManager).onErrorReturn { 0 }
+        playlistManager.countEpisodesRxFlowable(playlist, episodeManager, playbackManager).onErrorReturn { 0 }
     }
 
     var adapterState: MutableList<Playlist> = mutableListOf()
@@ -66,7 +66,7 @@ class FiltersFragmentViewModel @Inject constructor(
         }
 
         runBlocking(Dispatchers.Default) {
-            playlistManager.updateAll(playlists)
+            playlistManager.updateAllBlocking(playlists)
             if (moved) {
                 analyticsTracker.track(AnalyticsEvent.FILTER_LIST_REORDERED)
             }
@@ -87,5 +87,9 @@ class FiltersFragmentViewModel @Inject constructor(
             val playlist = playlistManager.findByUuid(playlistUuid) ?: return@launch
             onSuccess(playlist)
         }
+    }
+
+    fun trackOnCreateFilterTap() {
+        analyticsTracker.track(AnalyticsEvent.FILTER_CREATE_BUTTON_TAPPED)
     }
 }

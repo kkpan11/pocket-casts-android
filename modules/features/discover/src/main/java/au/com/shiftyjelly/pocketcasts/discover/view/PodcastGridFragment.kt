@@ -5,7 +5,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.Observer
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.RecyclerView.ItemDecoration
@@ -19,6 +23,7 @@ import au.com.shiftyjelly.pocketcasts.utils.extensions.dpToPx
 import au.com.shiftyjelly.pocketcasts.views.helper.NavigationIcon.BackArrow
 import au.com.shiftyjelly.pocketcasts.views.helper.UiUtil
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 @AndroidEntryPoint
@@ -78,6 +83,14 @@ class PodcastGridFragment : PodcastGridListFragment() {
             },
         )
 
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settings.bottomInset.collect {
+                    binding?.mainNestedScrollView?.updatePadding(bottom = it)
+                }
+            }
+        }
+
         return binding?.root
     }
 
@@ -108,7 +121,7 @@ class PodcastGridFragment : PodcastGridListFragment() {
 
         recyclerView.addItemDecoration(SpaceItemDecoration())
         val imageSize = UiUtil.getDiscoverGridImageWidthPx(context = recyclerView.context)
-        adapter = GridListAdapter(imageSize, onPodcastClicked, onPodcastSubscribe)
+        adapter = GridListAdapter(onPodcastClicked, onPodcastSubscribe, imageSize)
         recyclerView.adapter = adapter
     }
 

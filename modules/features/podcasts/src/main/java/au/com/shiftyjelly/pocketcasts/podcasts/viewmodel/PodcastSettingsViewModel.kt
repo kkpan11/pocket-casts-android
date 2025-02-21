@@ -6,7 +6,7 @@ import androidx.lifecycle.asLiveData
 import androidx.lifecycle.toLiveData
 import androidx.lifecycle.viewModelScope
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.entity.Playlist
 import au.com.shiftyjelly.pocketcasts.models.entity.Podcast
@@ -31,7 +31,7 @@ class PodcastSettingsViewModel @Inject constructor(
     private val podcastManager: PodcastManager,
     private val playbackManager: PlaybackManager,
     private val playlistManager: PlaylistManager,
-    private val analyticsTracker: AnalyticsTrackerWrapper,
+    private val analyticsTracker: AnalyticsTracker,
     settings: Settings,
 ) : ViewModel(), CoroutineScope {
 
@@ -50,16 +50,16 @@ class PodcastSettingsViewModel @Inject constructor(
     fun loadPodcast(uuid: String) {
         this.podcastUuid = uuid
         podcast = podcastManager
-            .observePodcastByUuid(uuid)
+            .podcastByUuidRxFlowable(uuid)
             .subscribeOn(Schedulers.io())
             .toLiveData()
 
-        val filters = playlistManager.observeAll().map {
+        val filters = playlistManager.findAllRxFlowable().map {
             it.filter { filter -> filter.podcastUuidList.contains(uuid) }
         }
         includedFilters = filters.toLiveData()
 
-        val availablePodcastFilters = playlistManager.observeAll().map {
+        val availablePodcastFilters = playlistManager.findAllRxFlowable().map {
             it.filter { filter -> !filter.allPodcasts }
         }
         availableFilters = availablePodcastFilters.toLiveData()
@@ -88,14 +88,14 @@ class PodcastSettingsViewModel @Inject constructor(
         val podcast = this.podcast.value ?: return
         launch {
             val autoDownloadStatus = if (download) Podcast.AUTO_DOWNLOAD_NEW_EPISODES else Podcast.AUTO_DOWNLOAD_OFF
-            podcastManager.updateAutoDownloadStatus(podcast, autoDownloadStatus)
+            podcastManager.updateAutoDownloadStatusBlocking(podcast, autoDownloadStatus)
         }
     }
 
     fun showNotifications(show: Boolean) {
         val podcast = this.podcast.value ?: return
         launch {
-            podcastManager.updateShowNotifications(podcast, show)
+            podcastManager.updateShowNotificationsBlocking(podcast, show)
         }
     }
 
@@ -117,7 +117,7 @@ class PodcastSettingsViewModel @Inject constructor(
     fun unsubscribe() {
         val podcast = this.podcast.value ?: return
         launch {
-            podcastManager.unsubscribe(podcast.uuid, playbackManager)
+            podcastManager.unsubscribeBlocking(podcast.uuid, playbackManager)
             analyticsTracker.track(
                 AnalyticsEvent.PODCAST_UNSUBSCRIBED,
                 AnalyticsProp.podcastUnsubscribed(SourceView.PODCAST_SETTINGS, podcast.uuid),
@@ -128,7 +128,7 @@ class PodcastSettingsViewModel @Inject constructor(
     fun filterSelectionChanged(newSelection: List<String>) {
         launch {
             podcastUuid?.let { podcastUuid ->
-                playlistManager.findAll().forEach { playlist ->
+                playlistManager.findAllBlocking().forEach { playlist ->
                     val currentSelection = playlist.podcastUuidList.toMutableList()
                     val included = newSelection.contains(playlist.uuid)
 
@@ -150,7 +150,7 @@ class PodcastSettingsViewModel @Inject constructor(
                             listOf(PlaylistProperty.Podcasts),
                             PlaylistUpdateSource.PODCAST_SETTINGS,
                         )
-                        playlistManager.update(playlist, userPlaylistUpdate)
+                        playlistManager.updateBlocking(playlist, userPlaylistUpdate)
                     }
                 }
             }

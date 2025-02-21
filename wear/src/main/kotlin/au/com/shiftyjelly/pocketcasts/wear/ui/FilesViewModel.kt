@@ -14,6 +14,8 @@ class FilesViewModel @Inject constructor(
 ) : ViewModel() {
 
     val userEpisodes = userEpisodeManager
-        .observeUserEpisodesSorted(settings.getCloudSortOrder())
+        .userEpisodesSortedRxFlowable(settings.cloudSortOrder.value)
         .asFlow()
+
+    val artworkConfiguration = settings.artworkConfiguration.flow
 }

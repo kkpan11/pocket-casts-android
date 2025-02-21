@@ -4,11 +4,11 @@ import android.content.Context
 import android.content.res.Resources
 import android.view.View
 import android.widget.Toast
+import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.map
-import au.com.shiftyjelly.pocketcasts.analytics.FirebaseAnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.localization.R
 import au.com.shiftyjelly.pocketcasts.views.dialog.OptionsDialog
@@ -59,7 +59,7 @@ abstract class MultiSelectHelper<T> : CoroutineScope {
     abstract fun onMenuItemSelected(
         itemId: Int,
         resources: Resources,
-        fragmentManager: FragmentManager,
+        activity: FragmentActivity,
     ): Boolean
     abstract fun deselect(multiSelectable: T)
 
@@ -71,8 +71,6 @@ abstract class MultiSelectHelper<T> : CoroutineScope {
         if (!isMultiSelecting) {
             isMultiSelecting = !isMultiSelecting
             select(multiSelectable)
-
-            FirebaseAnalyticsTracker.enteredMultiSelect()
         } else {
             val selectAllAbove = if (isSelected(multiSelectable) && selectedList.size > 1) {
                 R.string.deselect_all_above

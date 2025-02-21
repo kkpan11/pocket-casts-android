@@ -1,7 +1,7 @@
 package au.com.shiftyjelly.pocketcasts.settings.viewmodel
 
 import android.content.Context
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
 import au.com.shiftyjelly.pocketcasts.preferences.UserSetting
 import au.com.shiftyjelly.pocketcasts.repositories.file.FileStorage
@@ -55,7 +55,7 @@ class StorageSettingsViewModelTest {
     private lateinit var settings: Settings
 
     @Mock
-    private lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    private lateinit var analyticsTracker: AnalyticsTracker
 
     @Mock
     @ApplicationContext
@@ -73,7 +73,7 @@ class StorageSettingsViewModelTest {
         whenever(settings.getStorageChoiceName()).thenReturn("")
         whenever(settings.backgroundRefreshPodcasts).thenReturn(UserSetting.Mock(true, mock()))
         whenever(settings.warnOnMeteredNetwork).thenReturn(UserSetting.Mock(true, mock()))
-        whenever(episodeManager.observeDownloadedEpisodes()).thenReturn(Flowable.empty())
+        whenever(episodeManager.findDownloadedEpisodesRxFlowable()).thenReturn(Flowable.empty())
         viewModel = StorageSettingsViewModel(
             episodeManager,
             fileStorage,

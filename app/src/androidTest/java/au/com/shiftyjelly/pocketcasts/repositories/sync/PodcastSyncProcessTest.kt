@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.db.AppDatabase
+import au.com.shiftyjelly.pocketcasts.models.di.ModelModule
+import au.com.shiftyjelly.pocketcasts.models.di.addTypeConverters
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
 import au.com.shiftyjelly.pocketcasts.preferences.AccessToken
 import au.com.shiftyjelly.pocketcasts.preferences.Settings
@@ -16,11 +19,12 @@ import au.com.shiftyjelly.pocketcasts.repositories.podcast.PlaylistManager
 import au.com.shiftyjelly.pocketcasts.repositories.podcast.PodcastManager
 import au.com.shiftyjelly.pocketcasts.repositories.user.StatsManager
 import au.com.shiftyjelly.pocketcasts.servers.di.ServersModule
-import au.com.shiftyjelly.pocketcasts.servers.sync.SyncServerManager
+import au.com.shiftyjelly.pocketcasts.servers.sync.SyncServiceManager
+import au.com.shiftyjelly.pocketcasts.sharedtest.FakeCrashLogging
 import au.com.shiftyjelly.pocketcasts.utils.extensions.toIsoString
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
-import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlagWrapper
+import com.squareup.moshi.Moshi
 import java.net.HttpURLConnection
+import java.time.Instant
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import junit.framework.TestCase.assertEquals
@@ -50,7 +54,8 @@ class PodcastSyncProcessTest {
     private lateinit var retrofit: Retrofit
     private lateinit var okhttpCache: Cache
     private lateinit var appDatabase: AppDatabase
-    private val featureFlagWrapper: FeatureFlagWrapper = mock()
+
+    private val moshi = ServersModule().provideMoshi()
 
     @Before
     fun setUp() {
@@ -59,13 +64,13 @@ class PodcastSyncProcessTest {
         mockWebServer = MockWebServer()
         mockWebServer.start()
 
-        appDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        appDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .addTypeConverters(ModelModule.provideRoomConverters(Moshi.Builder().build()))
+            .build()
 
-        whenever(featureFlagWrapper.isEnabled(Feature.BOOKMARKS_ENABLED)) doReturn true
-        val moshi = ServersModule.provideMoshiBuilder(featureFlagWrapper).build()
         val okHttpClient = OkHttpClient.Builder().build()
         retrofit = ServersModule.provideRetrofit(baseUrl = mockWebServer.url("/").toString(), okHttpClient = okHttpClient, moshi = moshi)
-        okhttpCache = ServersModule.provideCache(folder = "TestCache", context = context)
+        okhttpCache = ServersModule.createCache(folder = "TestCache", context = context, cacheSizeInMB = 10)
     }
 
     /**
@@ -77,18 +82,18 @@ class PodcastSyncProcessTest {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
 
             val podcastManager: PodcastManager = mock()
-            whenever(podcastManager.findPodcastsToSync()).thenReturn(emptyList())
+            whenever(podcastManager.findPodcastsToSyncBlocking()).thenReturn(emptyList())
 
             val episodeManager: EpisodeManager = mock()
-            whenever(episodeManager.findEpisodesToSync()).thenReturn(emptyList())
+            whenever(episodeManager.findEpisodesToSyncBlocking()).thenReturn(emptyList())
 
             val playlistManager: PlaylistManager = mock()
-            whenever(playlistManager.findPlaylistsToSync()).thenReturn(emptyList())
+            whenever(playlistManager.findPlaylistsToSyncBlocking()).thenReturn(emptyList())
 
             val folderManager: FolderManager = mock()
-            whenever(folderManager.findFoldersToSync()).thenReturn(emptyList())
+            whenever(folderManager.findFoldersToSyncBlocking()).thenReturn(emptyList())
 
-            val bookmarkManager = BookmarkManagerImpl(appDatabase = appDatabase, mock())
+            val bookmarkManager = BookmarkManagerImpl(appDatabase = appDatabase, AnalyticsTracker.test())
             val bookmarkToUpdate = bookmarkManager.add(
                 episode = PodcastEpisode(
                     uuid = "e7a6f7d0-02f2-0133-1c51-059c869cc4eb",
@@ -124,22 +129,24 @@ class PodcastSyncProcessTest {
             whenever(syncAccountManager.isLoggedIn()) doReturn true
             whenever(syncAccountManager.getAccessToken()) doReturn AccessToken("access_token")
 
-            val syncServerManager = SyncServerManager(
+            val syncServiceManager = SyncServiceManager(
                 retrofit = retrofit,
                 settings = settings,
                 cache = okhttpCache,
             )
 
             val syncManager = SyncManagerImpl(
-                analyticsTracker = mock(),
+                analyticsTracker = AnalyticsTracker.test(),
                 context = context,
                 settings = settings,
                 syncAccountManager = syncAccountManager,
-                syncServerManager = syncServerManager,
+                syncServiceManager = syncServiceManager,
+                moshi = moshi,
             )
 
             val syncProcess = PodcastSyncProcess(
                 context = context,
+                applicationScope = CoroutineScope(Dispatchers.Default),
                 settings = settings,
                 episodeManager = episodeManager,
                 podcastManager = podcastManager,
@@ -148,13 +155,14 @@ class PodcastSyncProcessTest {
                 statsManager = statsManager,
                 fileStorage = mock(),
                 playbackManager = mock(),
-                podcastCacheServerManager = mock(),
+                podcastCacheServiceManager = mock(),
                 userEpisodeManager = mock(),
                 subscriptionManager = mock(),
                 folderManager = folderManager,
                 syncManager = syncManager,
-                featureFlagWrapper = featureFlagWrapper,
-                applicationScope = CoroutineScope(Dispatchers.Default),
+                ratingsManager = mock(),
+                crashLogging = FakeCrashLogging(),
+                analyticsTracker = AnalyticsTracker.test(),
             )
 
             val response = MockResponse()
@@ -215,7 +223,7 @@ class PodcastSyncProcessTest {
                 )
             mockWebServer.enqueue(response)
 
-            val lastModified = System.currentTimeMillis().toString()
+            val lastModified = Instant.ofEpochMilli(System.currentTimeMillis())
 
             syncProcess.performIncrementalSync(lastModified)
                 .doOnError {

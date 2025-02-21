@@ -5,8 +5,11 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import au.com.shiftyjelly.pocketcasts.models.db.dao.FolderDao
+import au.com.shiftyjelly.pocketcasts.models.di.ModelModule
+import au.com.shiftyjelly.pocketcasts.models.di.addTypeConverters
 import au.com.shiftyjelly.pocketcasts.models.type.PodcastsSortType
 import au.com.shiftyjelly.pocketcasts.utils.FakeFileGenerator.fakeFolder
+import com.squareup.moshi.Moshi
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertNull
@@ -25,7 +28,9 @@ class FolderDaoTest {
     @Before
     fun setupDatabase() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        testDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        testDatabase = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .addTypeConverters(ModelModule.provideRoomConverters(Moshi.Builder().build()))
+            .build()
         folderDao = testDatabase.folderDao()
     }
 
@@ -45,23 +50,14 @@ class FolderDaoTest {
     }
 
     @Test
-    fun updateFolderShouldModifyTheExistingFolder() = runTest {
-        folderDao.insert(fakeFolder)
+    fun testInsertAllFoldersShouldStoreItCorrectly() = runTest {
+        folderDao.insertAll(listOf(fakeFolder.copy(uuid = "uuid1"), fakeFolder.copy(uuid = "uuid2")))
 
-        val updatedFolder = fakeFolder.copy(name = "Updated Folder")
-        folderDao.update(updatedFolder)
+        val foundFolder1 = folderDao.findByUuid("uuid1")
+        assertEquals(foundFolder1?.uuid, "uuid1")
 
-        val foundFolder = folderDao.findByUuid(updatedFolder.uuid)
-        assertNotNull(foundFolder)
-        assertEquals(updatedFolder.name, foundFolder?.name)
-    }
-
-    @Test
-    fun deleteFolderShouldRemoveItFromTheDatabase() = runTest {
-        folderDao.insert(fakeFolder)
-        folderDao.delete(fakeFolder)
-        val foundFolder = folderDao.findByUuid(fakeFolder.uuid)
-        assertNull(foundFolder)
+        val foundFolder2 = folderDao.findByUuid("uuid2")
+        assertEquals(foundFolder2?.uuid, "uuid2")
     }
 
     @Test
@@ -149,5 +145,38 @@ class FolderDaoTest {
         assertNotNull(updatedFolder)
         assertEquals(newName, updatedFolder?.name)
         assertEquals(syncModified, updatedFolder?.syncModified)
+    }
+
+    @Test
+    fun shouldReplaceOldFoldersWithNewOnes() = runTest {
+        val initialFolders = listOf(
+            fakeFolder.copy(uuid = "uuid1"),
+            fakeFolder.copy(uuid = "uuid2"),
+        )
+        folderDao.insertAll(initialFolders)
+
+        var foundFolder1 = folderDao.findByUuid("uuid1")
+        var foundFolder2 = folderDao.findByUuid("uuid2")
+        assertNotNull(foundFolder1)
+        assertNotNull(foundFolder2)
+
+        val newFolders = listOf(
+            fakeFolder.copy(uuid = "uuid3"),
+            fakeFolder.copy(uuid = "uuid4"),
+        )
+
+        folderDao.replaceAllFolders(newFolders)
+
+        foundFolder1 = folderDao.findByUuid("uuid1")
+        foundFolder2 = folderDao.findByUuid("uuid2")
+        assertNull(foundFolder1)
+        assertNull(foundFolder2)
+
+        val foundFolder3 = folderDao.findByUuid("uuid3")
+        val foundFolder4 = folderDao.findByUuid("uuid4")
+        assertNotNull(foundFolder3)
+        assertNotNull(foundFolder4)
+        assertEquals("uuid3", foundFolder3?.uuid)
+        assertEquals("uuid4", foundFolder4?.uuid)
     }
 }

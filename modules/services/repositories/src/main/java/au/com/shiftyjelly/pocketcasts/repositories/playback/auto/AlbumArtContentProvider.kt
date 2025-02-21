@@ -6,10 +6,22 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.util.Log
-import au.com.shiftyjelly.pocketcasts.repositories.playback.auto.AutoConverter.autoImageLoaderListener
-import com.bumptech.glide.Glide
+import au.com.shiftyjelly.pocketcasts.repositories.images.PocketCastsImageRequestFactory
+import au.com.shiftyjelly.pocketcasts.utils.log.LogBuffer
+import coil.ImageLoader
+import coil.annotation.ExperimentalCoilApi
+import coil.request.ErrorResult
+import coil.request.SuccessResult
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import java.io.File
+import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okio.use
+import timber.log.Timber
 
 class AlbumArtContentProvider : ContentProvider() {
 
@@ -22,27 +34,50 @@ class AlbumArtContentProvider : ContentProvider() {
     override fun onCreate() = true
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
-        val context = this.context ?: return null
-        Log.d("AUTO_IMAGE", "Content uri received: ${uri.lastPathSegment}")
+        val result = runCatching {
+            Timber.tag("AlbumArtProvider").d("Content uri received ${uri.lastPathSegment}")
 
-        // Extract the image uri e.g. https://static.pocketcasts.net/discover/images/webp/480/220e7cc0-d53e-0133-2e9f-6dc413d6d41d.webp
-        val imageUri = Uri.parse(uri.lastPathSegment)
-        // Create the cache file name e.g. static.pocketcasts.net:discover:images:webp:480:220e7cc0-d53e-0133-2e9f-6dc413d6d41d.webp
-        val cachePath = "${imageUri.host}${imageUri.encodedPath}".replace(oldChar = '/', newChar = ':')
-        // Create the cache file path e.g. /data/user/0/au.com.shiftyjelly.pocketcasts.debug/cache/static.pocketcasts.net:discover:images:webp:480:220e7cc0-d53e-0133-2e9f-6dc413d6d41d.webp
-        val file = File(context.cacheDir, cachePath)
-        // Cache the image
-        if (!file.exists()) {
-            val cacheFile = Glide.with(context)
-                .downloadOnly()
-                .addListener(autoImageLoaderListener)
-                .load(imageUri)
-                .submit()
-                .get()
+            val applicationContext = context?.applicationContext ?: return@runCatching null
+            val entryPoint = getEntryPoint(applicationContext)
 
-            cacheFile.renameTo(file)
+            val imageUrl = uri.toImageUrl()
+            val artworkFile = if (imageUrl != null) {
+                entryPoint.imageLoader()
+                    .getArtworkFile(imageUrl, applicationContext)
+                    ?.takeIf(File::exists)
+            } else {
+                uri.path?.let(::File)
+            }
+
+            artworkFile?.let { ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY) }
         }
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return result
+            .onFailure { exception ->
+                val message = "Failed to provide artwork file descriptor for $uri"
+                Timber.tag("AlbumArtProvider").e(exception, message)
+                LogBuffer.e("AlbumArtProvider", exception, message)
+            }
+            .getOrNull()
+    }
+
+    private fun getEntryPoint(context: Context): AlbumArtEntryPoint {
+        return EntryPointAccessors.fromApplication(context, AlbumArtEntryPoint::class.java)
+    }
+
+    private fun Uri.toImageUrl() = lastPathSegment?.toHttpUrlOrNull()
+
+    private fun ImageLoader.getArtworkFile(url: HttpUrl, context: Context): File? {
+        val requestFactory = PocketCastsImageRequestFactory(context)
+        val request = requestFactory.createForFileOrUrl(url.toString())
+        return when (val result = runBlocking { execute(request) }) {
+            is SuccessResult -> result.diskCacheKey?.let { key -> getCachedArtworkFile(key) }
+            is ErrorResult -> null
+        }
+    }
+
+    @OptIn(ExperimentalCoilApi::class)
+    private fun ImageLoader.getCachedArtworkFile(key: String): File? {
+        return diskCache?.openSnapshot(key)?.use { snapshot -> snapshot.data.toFile() }
     }
 
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
@@ -65,4 +100,10 @@ class AlbumArtContentProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<String>?) = 0
 
     override fun getType(uri: Uri): String? = null
+
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface AlbumArtEntryPoint {
+        fun imageLoader(): ImageLoader
+    }
 }

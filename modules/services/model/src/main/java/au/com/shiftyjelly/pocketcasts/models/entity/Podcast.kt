@@ -11,11 +11,16 @@ import androidx.room.Ignore
 import androidx.room.PrimaryKey
 import au.com.shiftyjelly.pocketcasts.localization.helper.RelativeDateFormatter
 import au.com.shiftyjelly.pocketcasts.localization.helper.tryToLocalise
+import au.com.shiftyjelly.pocketcasts.models.to.AutoArchiveAfterPlaying
+import au.com.shiftyjelly.pocketcasts.models.to.AutoArchiveInactive
+import au.com.shiftyjelly.pocketcasts.models.to.AutoArchiveLimit
 import au.com.shiftyjelly.pocketcasts.models.to.Bundle
 import au.com.shiftyjelly.pocketcasts.models.to.PlaybackEffects
 import au.com.shiftyjelly.pocketcasts.models.to.PodcastGrouping
 import au.com.shiftyjelly.pocketcasts.models.type.EpisodesSortType
 import au.com.shiftyjelly.pocketcasts.models.type.TrimMode
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.Feature
+import au.com.shiftyjelly.pocketcasts.utils.featureflag.FeatureFlag
 import java.io.Serializable
 import java.net.MalformedURLException
 import java.net.URL
@@ -31,6 +36,7 @@ data class Podcast(
     @ColumnInfo(name = "title") var title: String = "",
     @ColumnInfo(name = "podcast_url") var podcastUrl: String? = null,
     @ColumnInfo(name = "podcast_description") var podcastDescription: String = "",
+    @ColumnInfo(name = "podcast_html_description") var podcastHtmlDescription: String = "",
     @ColumnInfo(name = "podcast_category") var podcastCategory: String = "",
     @ColumnInfo(name = "podcast_language") var podcastLanguage: String = "",
     @ColumnInfo(name = "media_type") var mediaType: String? = null,
@@ -38,20 +44,26 @@ data class Podcast(
     @ColumnInfo(name = "author") var author: String = "",
     @ColumnInfo(name = "sort_order") var sortPosition: Int = 0,
     @ColumnInfo(name = "episodes_sort_order") var episodesSortType: EpisodesSortType = EpisodesSortType.EPISODES_SORT_BY_DATE_DESC,
+    @ColumnInfo(name = "episodes_sort_order_modified") var episodesSortTypeModified: Date? = null,
     @ColumnInfo(name = "latest_episode_date") var latestEpisodeDate: Date? = null,
     // TODO remove this later in a separate PR as it is no longer used
     @ColumnInfo(name = "episodes_to_keep") var episodesToKeep: Int = 0,
     @ColumnInfo(name = "override_global_settings") var overrideGlobalSettings: Boolean = false,
     @ColumnInfo(name = "override_global_effects") var overrideGlobalEffects: Boolean = false,
+    @ColumnInfo(name = "override_global_effects_modified") var overrideGlobalEffectsModified: Date? = null,
     @ColumnInfo(name = "start_from") var startFromSecs: Int = 0,
+    @ColumnInfo(name = "start_from_modified") var startFromModified: Date? = null,
     @ColumnInfo(name = "playback_speed") var playbackSpeed: Double = 1.0,
-    @ColumnInfo(name = "silence_removed") var isSilenceRemoved: Boolean = false,
+    @ColumnInfo(name = "playback_speed_modified") var playbackSpeedModified: Date? = null,
     @ColumnInfo(name = "volume_boosted") var isVolumeBoosted: Boolean = false,
+    @ColumnInfo(name = "volume_boosted_modified") var volumeBoostedModified: Date? = null,
     @ColumnInfo(name = "is_folder") var isFolder: Boolean = false,
     @ColumnInfo(name = "subscribed") var isSubscribed: Boolean = false,
     @ColumnInfo(name = "show_notifications") var isShowNotifications: Boolean = false,
+    @ColumnInfo(name = "show_notifications_modified") var showNotificationsModified: Date? = null,
     @ColumnInfo(name = "auto_download_status") var autoDownloadStatus: Int = 0,
     @ColumnInfo(name = "auto_add_to_up_next") var autoAddToUpNext: AutoAddUpNext = AutoAddUpNext.OFF,
+    @ColumnInfo(name = "auto_add_to_up_next_modified") var autoAddToUpNextModified: Date? = null,
     @ColumnInfo(name = "most_popular_color") var backgroundColor: Int = 0,
     @ColumnInfo(name = "primary_color") var tintColorForLightBg: Int = 0,
     @ColumnInfo(name = "secondary_color") var tintColorForDarkBg: Int = 0,
@@ -64,19 +76,48 @@ data class Podcast(
     @ColumnInfo(name = "sync_status") var syncStatus: Int = SYNC_STATUS_NOT_SYNCED,
     @ColumnInfo(name = "exclude_from_auto_archive") var excludeFromAutoArchive: Boolean = false, // Not used anymore
     @ColumnInfo(name = "override_global_archive") var overrideGlobalArchive: Boolean = false,
-    @ColumnInfo(name = "auto_archive_played_after") var autoArchiveAfterPlaying: Int = 0,
-    @ColumnInfo(name = "auto_archive_inactive_after") var autoArchiveInactive: Int = 0,
-    @ColumnInfo(name = "auto_archive_episode_limit") var autoArchiveEpisodeLimit: Int? = null,
+    @ColumnInfo(name = "override_global_archive_modified") var overrideGlobalArchiveModified: Date? = null,
+    @Deprecated(
+        message = "This property doesn't account for global override. Use 'autoArchiveAfterPlaying' instead.",
+        level = DeprecationLevel.ERROR,
+        replaceWith = ReplaceWith(expression = "autoArchiveAfterPlaying"),
+    )
+    @ColumnInfo(name = "auto_archive_played_after") internal var rawAutoArchiveAfterPlaying: AutoArchiveAfterPlaying = AutoArchiveAfterPlaying.Never,
+    @ColumnInfo(name = "auto_archive_played_after_modified") var autoArchiveAfterPlayingModified: Date? = null,
+    @Deprecated(
+        message = "This property doesn't account for global override. Use 'autoArchiveInactive' instead.",
+        level = DeprecationLevel.ERROR,
+        replaceWith = ReplaceWith(expression = "autoArchiveInactive"),
+    )
+    @ColumnInfo(name = "auto_archive_inactive_after") internal var rawAutoArchiveInactive: AutoArchiveInactive = AutoArchiveInactive.Default,
+    @ColumnInfo(name = "auto_archive_inactive_after_modified") var autoArchiveInactiveModified: Date? = null,
+    @Deprecated(
+        message = "This property doesn't account for global override. Use 'autoArchiveEpisodeLimit' instead.",
+        level = DeprecationLevel.ERROR,
+        replaceWith = ReplaceWith(expression = "autoArchiveEpisodeLimit"),
+    )
+    @ColumnInfo(name = "auto_archive_episode_limit") internal var rawAutoArchiveEpisodeLimit: AutoArchiveLimit = AutoArchiveLimit.None,
+    @ColumnInfo(name = "auto_archive_episode_limit_modified") var autoArchiveEpisodeLimitModified: Date? = null,
     @ColumnInfo(name = "estimated_next_episode") var estimatedNextEpisode: Date? = null,
     @ColumnInfo(name = "episode_frequency") var episodeFrequency: String? = null,
-    @ColumnInfo(name = "grouping") var grouping: Int = PodcastGrouping.All.indexOf(PodcastGrouping.None),
+    @ColumnInfo(name = "grouping") var grouping: PodcastGrouping = PodcastGrouping.None,
+    @ColumnInfo(name = "grouping_modified") var groupingModified: Date? = null,
     @ColumnInfo(name = "skip_last") var skipLastSecs: Int = 0,
+    @ColumnInfo(name = "skip_last_modified") var skipLastModified: Date? = null,
     @ColumnInfo(name = "show_archived") var showArchived: Boolean = false,
+    @ColumnInfo(name = "show_archived_modified") var showArchivedModified: Date? = null,
     @ColumnInfo(name = "trim_silence_level") var trimMode: TrimMode = TrimMode.OFF,
+    @ColumnInfo(name = "trim_silence_level_modified") var trimModeModified: Date? = null,
     @ColumnInfo(name = "refresh_available") var refreshAvailable: Boolean = false,
-    @ColumnInfo(name = "folder_uuid") var folderUuid: String? = null,
+    @Deprecated(
+        message = "This property doesn't account for home folder. Use 'folderUuid' instead.",
+        level = DeprecationLevel.ERROR,
+        replaceWith = ReplaceWith(expression = "folderUuid"),
+    )
+    @ColumnInfo(name = "folder_uuid") internal var rawFolderUuid: String? = null,
     @ColumnInfo(name = "licensing") var licensing: Licensing = Licensing.KEEP_EPISODES,
     @ColumnInfo(name = "isPaid") var isPaid: Boolean = false,
+    @ColumnInfo(name = "is_private") var isPrivate: Boolean = false,
     @Embedded(prefix = "bundle") var singleBundle: Bundle? = null,
     @Ignore val episodes: MutableList<PodcastEpisode> = mutableListOf(),
 ) : Serializable {
@@ -130,13 +171,16 @@ data class Podcast(
     val isNotSynced: Boolean
         get() = syncStatus == SYNC_STATUS_NOT_SYNCED
 
-    val podcastGrouping: PodcastGrouping
-        get() = PodcastGrouping.All[grouping]
+    val isSilenceRemoved: Boolean
+        get() = trimMode != TrimMode.OFF
+
+    val canShare: Boolean
+        get() = !FeatureFlag.isEnabled(Feature.SHARE_PODCAST_PRIVATE_NOT_AVAILABLE) || !isPrivate
 
     val isUsingEffects: Boolean
         get() = overrideGlobalEffects && (isSilenceRemoved || isVolumeBoosted || playbackSpeed != 1.0)
 
-    var playbackEffects: PlaybackEffects
+    val playbackEffects: PlaybackEffects
         get() {
             val effects = PlaybackEffects()
             effects.playbackSpeed = playbackSpeed
@@ -144,10 +188,39 @@ data class Podcast(
             effects.isVolumeBoosted = isVolumeBoosted
             return effects
         }
-        set(effects) {
-            playbackSpeed = effects.playbackSpeed
-            trimMode = effects.trimMode
-            isVolumeBoosted = effects.isVolumeBoosted
+
+    @Suppress("DEPRECATION_ERROR")
+    var folderUuid: String?
+        get() = rawFolderUuid?.takeIf { it != Folder.homeFolderUuid }
+        set(value) {
+            rawFolderUuid = value?.takeIf { it != Folder.homeFolderUuid }
+        }
+
+    @Suppress("DEPRECATION_ERROR")
+    var autoArchiveAfterPlaying: AutoArchiveAfterPlaying?
+        get() = rawAutoArchiveAfterPlaying.takeIf { overrideGlobalArchive }
+        set(value) {
+            if (value != null) {
+                rawAutoArchiveAfterPlaying = value
+            }
+        }
+
+    @Suppress("DEPRECATION_ERROR")
+    var autoArchiveInactive: AutoArchiveInactive?
+        get() = rawAutoArchiveInactive.takeIf { overrideGlobalArchive }
+        set(value) {
+            if (value != null) {
+                rawAutoArchiveInactive = value
+            }
+        }
+
+    @Suppress("DEPRECATION_ERROR")
+    var autoArchiveEpisodeLimit: AutoArchiveLimit?
+        get() = rawAutoArchiveEpisodeLimit.takeIf { overrideGlobalArchive }
+        set(value) {
+            if (value != null) {
+                rawAutoArchiveEpisodeLimit = value
+            }
         }
 
     enum class Licensing {
@@ -183,10 +256,12 @@ data class Podcast(
         }
     }
 
+    fun lightThemeTint() = if (tintColorForLightBg != 0 && tintColorForLightBg != DEFAULT_SERVER_LIGHT_TINT_COLOR) tintColorForLightBg else DEFAULT_LIGHT_TINT
+
+    fun darkThemeTint() = if (tintColorForDarkBg != 0 && tintColorForDarkBg != DEFAULT_SERVER_DARK_TINT_COLOR) tintColorForDarkBg else DEFAULT_DARK_TINT
+
     fun getTintColor(isDarkTheme: Boolean): Int {
-        val lightThemeColor = if (tintColorForLightBg != 0 && tintColorForLightBg != DEFAULT_SERVER_LIGHT_TINT_COLOR) tintColorForLightBg else DEFAULT_LIGHT_TINT
-        val darkThemeColor = if (tintColorForDarkBg != 0 && tintColorForDarkBg != DEFAULT_SERVER_DARK_TINT_COLOR) tintColorForDarkBg else DEFAULT_DARK_TINT
-        return if (isDarkTheme) darkThemeColor else lightThemeColor
+        return if (isDarkTheme) darkThemeTint() else lightThemeTint()
     }
 
     fun getPlayerTintColor(isDarkTheme: Boolean): Int {
@@ -227,6 +302,30 @@ data class Podcast(
                 val formattedDate = RelativeDateFormatter(context).format(expectedDate)
                 resources.getString(LR.string.podcast_next_episode_value, formattedDate)
             }
+        }
+    }
+
+    /**
+     * Copies playback effect settings from a source podcast to this podcast
+     */
+    fun copyPlaybackEffects(
+        sourcePodcast: Podcast,
+    ) {
+        sourcePodcast.overrideGlobalEffectsModified?.takeIf { overrideGlobalEffectsModified?.before(it) ?: true }?.let {
+            overrideGlobalEffects = sourcePodcast.overrideGlobalEffects
+            overrideGlobalEffectsModified = sourcePodcast.overrideGlobalEffectsModified
+        }
+        sourcePodcast.playbackSpeedModified?.takeIf { playbackSpeedModified?.before(it) ?: true }?.let {
+            playbackSpeed = sourcePodcast.playbackSpeed
+            playbackSpeedModified = sourcePodcast.playbackSpeedModified
+        }
+        sourcePodcast.volumeBoostedModified?.takeIf { volumeBoostedModified?.before(it) ?: true }?.let {
+            isVolumeBoosted = sourcePodcast.isVolumeBoosted
+            volumeBoostedModified = sourcePodcast.volumeBoostedModified
+        }
+        sourcePodcast.trimModeModified?.takeIf { trimModeModified?.before(it) ?: true }?.let {
+            trimMode = sourcePodcast.trimMode
+            trimModeModified = sourcePodcast.trimModeModified
         }
     }
 }

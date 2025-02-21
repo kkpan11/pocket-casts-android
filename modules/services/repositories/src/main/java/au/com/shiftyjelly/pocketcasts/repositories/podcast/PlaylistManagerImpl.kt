@@ -2,6 +2,7 @@ package au.com.shiftyjelly.pocketcasts.repositories.podcast
 
 import android.content.Context
 import android.os.Build
+import au.com.shiftyjelly.pocketcasts.analytics.SourceView
 import au.com.shiftyjelly.pocketcasts.models.db.AppDatabase
 import au.com.shiftyjelly.pocketcasts.models.entity.Playlist
 import au.com.shiftyjelly.pocketcasts.models.entity.PodcastEpisode
@@ -56,7 +57,7 @@ class PlaylistManagerImpl @Inject constructor(
         get() = Dispatchers.Default
 
     private fun setupDefaultPlaylists() {
-        val existingNewRelease = playlistDao.findByUuidSync(NEWRELEASE_UUID)
+        val existingNewRelease = playlistDao.findByUuidBlocking(NEWRELEASE_UUID)
         if (existingNewRelease == null) {
             val newRelease = Playlist()
             newRelease.apply {
@@ -73,13 +74,13 @@ class PlaylistManagerImpl @Inject constructor(
                 syncStatus = Playlist.SYNC_STATUS_SYNCED
                 iconId = Playlist.calculateCombinedIconId(colorIndex = 0, iconIndex = 2) // Red clock
             }
-            playlistDao.insert(newRelease)
+            playlistDao.insertBlocking(newRelease)
         } else {
             existingNewRelease.iconId = 10
-            playlistDao.update(existingNewRelease)
+            playlistDao.updateBlocking(existingNewRelease)
         }
 
-        val existingInProgress = playlistDao.findByUuidSync(INPROGRESS_UUID)
+        val existingInProgress = playlistDao.findByUuidBlocking(INPROGRESS_UUID)
         if (existingInProgress == null) {
             val inProgress = Playlist()
             inProgress.apply {
@@ -97,63 +98,60 @@ class PlaylistManagerImpl @Inject constructor(
                 syncStatus = Playlist.SYNC_STATUS_SYNCED
                 iconId = Playlist.calculateCombinedIconId(colorIndex = 3, iconIndex = 4) // Purple play
             }
-            playlistDao.insert(inProgress)
+            playlistDao.insertBlocking(inProgress)
         } else {
             existingInProgress.iconId = 43
-            playlistDao.update(existingInProgress)
+            playlistDao.updateBlocking(existingInProgress)
         }
 
         settings.setBooleanForKey(CREATED_DEFAULT_PLAYLISTS, true)
     }
 
-    override fun findAll(): List<Playlist> {
+    override fun findAllBlocking(): List<Playlist> {
+        return playlistDao.findAllBlocking()
+    }
+
+    override suspend fun findAll(): List<Playlist> {
         return playlistDao.findAll()
     }
 
-    override suspend fun findAllSuspend(): List<Playlist> {
-        return playlistDao.findAllSuspend()
-    }
     override fun findAllFlow(): Flow<List<Playlist>> {
-        return playlistDao.findAllState()
+        return playlistDao.findAllFlow()
     }
 
-    override fun count(): Int {
-        return playlistDao.count()
+    override fun findAllRxFlowable(): Flowable<List<Playlist>> {
+        return playlistDao.findAllRxFlowable()
     }
 
-    override fun observeAll(): Flowable<List<Playlist>> {
-        return playlistDao.observeAll()
-    }
-
-    override fun findByUuidSync(playlistUuid: String): Playlist? {
-        return playlistDao.findByUuidSync(playlistUuid)
+    override fun findByUuidBlocking(playlistUuid: String): Playlist? {
+        return playlistDao.findByUuidBlocking(playlistUuid)
     }
 
     override suspend fun findByUuid(playlistUuid: String): Playlist? {
         return playlistDao.findByUuid(playlistUuid)
     }
 
-    override fun findByUuidRx(playlistUuid: String): Maybe<Playlist> {
-        return playlistDao.findByUUIDRx(playlistUuid)
+    override fun findByUuidRxMaybe(playlistUuid: String): Maybe<Playlist> {
+        return playlistDao.findByUuidRxMaybe(playlistUuid)
     }
 
-    override fun observeByUuid(playlistUuid: String): Flowable<Playlist> {
-        return playlistDao.observeByUUID(playlistUuid)
+    override fun findByUuidRxFlowable(playlistUuid: String): Flowable<Playlist> {
+        return playlistDao.findByUuidRxFlowable(playlistUuid)
     }
 
-    override fun observeByUuidAsList(playlistUuid: String): Flowable<List<Playlist>> {
-        return playlistDao.observeByUUIDAsList(playlistUuid)
+    override fun findByUuidAsListRxFlowable(playlistUuid: String): Flowable<List<Playlist>> {
+        return playlistDao.findByUuidAsListRxFlowable(playlistUuid)
     }
 
-    override fun findById(id: Long): Playlist? {
-        return playlistDao.findById(id)
+    override fun findByIdBlocking(id: Long): Playlist? {
+        return playlistDao.findByIdBlocking(id)
     }
 
-    override fun findEpisodes(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): List<PodcastEpisode> {
+    override fun findEpisodesBlocking(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): List<PodcastEpisode> {
         val where = buildPlaylistWhere(playlist, playbackManager)
         val orderBy = getPlaylistOrderByString(playlist)
         val limit = if (playlist.sortOrder() == Playlist.SortOrder.LAST_DOWNLOAD_ATTEMPT_DATE) 1000 else 500
-        return episodeManager.findEpisodesWhere("$where ORDER BY $orderBy LIMIT $limit")
+        return episodeManager.findEpisodesWhereBlocking("$where ORDER BY $orderBy LIMIT $limit")
     }
 
     private fun getPlaylistQuery(playlist: Playlist, limit: Int?, playbackManager: PlaybackManager): String {
@@ -162,15 +160,15 @@ class PlaylistManagerImpl @Inject constructor(
         return "$where ORDER BY $orderBy" + if (limit != null) " LIMIT $limit" else ""
     }
 
-    override fun observeEpisodes(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Flowable<List<PodcastEpisode>> {
+    override fun observeEpisodesBlocking(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Flowable<List<PodcastEpisode>> {
         val limitCount = if (playlist.sortOrder() == Playlist.SortOrder.LAST_DOWNLOAD_ATTEMPT_DATE) 1000 else 500
         val queryAfterWhere = getPlaylistQuery(playlist, limit = limitCount, playbackManager = playbackManager)
-        return episodeManager.observeEpisodesWhere(queryAfterWhere)
+        return episodeManager.findEpisodesWhereRxFlowable(queryAfterWhere)
     }
 
-    override fun observeEpisodesPreview(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Flowable<List<PodcastEpisode>> {
+    override fun observeEpisodesPreviewBlocking(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Flowable<List<PodcastEpisode>> {
         val queryAfterWhere = getPlaylistQuery(playlist, limit = 100, playbackManager = playbackManager)
-        return episodeManager.observeEpisodesWhere(queryAfterWhere)
+        return episodeManager.findEpisodesWhereRxFlowable(queryAfterWhere)
     }
 
     private fun getPlaylistOrderByString(playlist: Playlist): String? = when (playlist.sortOrder()) {
@@ -198,14 +196,14 @@ class PlaylistManagerImpl @Inject constructor(
         else -> null
     }
 
-    override fun create(playlist: Playlist): Long {
+    override suspend fun create(playlist: Playlist): Long {
         val id = playlistDao.insert(playlist)
         if (countPlaylists() == 1 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
             PocketCastsShortcuts.update(
                 playlistManager = this,
                 force = true,
-                coroutineScope = applicationScope,
                 context = context,
+                source = PocketCastsShortcuts.Source.CREATE_PLAYLIST,
             )
         }
         return id
@@ -214,7 +212,16 @@ class PlaylistManagerImpl @Inject constructor(
     /**
      * A null userPlayListUpdate parameter indicates that  the user did not initiate this update
      */
-    override fun update(
+    override fun updateBlocking(
+        playlist: Playlist,
+        userPlaylistUpdate: UserPlaylistUpdate?,
+        isCreatingFilter: Boolean,
+    ) {
+        playlistDao.updateBlocking(playlist)
+        playlistUpdateAnalytics.update(playlist, userPlaylistUpdate, isCreatingFilter)
+    }
+
+    override suspend fun update(
         playlist: Playlist,
         userPlaylistUpdate: UserPlaylistUpdate?,
         isCreatingFilter: Boolean,
@@ -223,8 +230,8 @@ class PlaylistManagerImpl @Inject constructor(
         playlistUpdateAnalytics.update(playlist, userPlaylistUpdate, isCreatingFilter)
     }
 
-    override fun updateAll(playlists: List<Playlist>) {
-        playlistDao.updateAll(playlists)
+    override fun updateAllBlocking(playlists: List<Playlist>) {
+        playlistDao.updateAllBlocking(playlists)
     }
 
     override fun updateAutoDownloadStatus(playlist: Playlist, autoDownloadEnabled: Boolean, unmeteredOnly: Boolean, powerOnly: Boolean) {
@@ -236,47 +243,46 @@ class PlaylistManagerImpl @Inject constructor(
         attrs["autoDownloadWifiOnly"] = unmeteredOnly
         attrs["autoDownloadPowerOnly"] = powerOnly
         attrs["syncStatus"] = Playlist.SYNC_STATUS_NOT_SYNCED
-//        databaseManager.updateAttributes(playlist, attrs)
     }
 
-    override fun rxUpdateAutoDownloadStatus(playlist: Playlist, autoDownloadEnabled: Boolean, unmeteredOnly: Boolean, powerOnly: Boolean): Completable {
+    override fun updateAutoDownloadStatusRxCompletable(playlist: Playlist, autoDownloadEnabled: Boolean, unmeteredOnly: Boolean, powerOnly: Boolean): Completable {
         return Completable.fromAction { updateAutoDownloadStatus(playlist, autoDownloadEnabled, unmeteredOnly, powerOnly) }
     }
 
-    override fun createPlaylist(name: String, iconId: Int, draft: Boolean): Playlist {
+    override fun createPlaylistBlocking(name: String, iconId: Int, draft: Boolean): Playlist {
         val playlist = Playlist(
             uuid = UUID.randomUUID().toString(),
             syncStatus = Playlist.SYNC_STATUS_NOT_SYNCED,
             title = name,
-            sortPosition = countPlaylists() + 1,
+            sortPosition = countPlaylistsBlocking() + 1,
             manual = false,
             iconId = iconId,
             draft = draft,
         )
 
         Timber.d("Creating playlist ${playlist.uuid}")
-        playlist.id = playlistDao.insert(playlist)
+        playlist.id = playlistDao.insertBlocking(playlist)
         return playlist
     }
 
-    override fun delete(playlist: Playlist) {
+    override fun deleteBlocking(playlist: Playlist) {
         val loggedIn = syncManager.isLoggedIn()
         if (loggedIn) {
             playlist.deleted = true
-            markAsNotSynced(playlist)
+            markAsNotSyncedBlocking(playlist)
 
             // user initiated filter deletion, not update of any playlist properties, so this
             // is not a user initiated update
-            update(playlist, userPlaylistUpdate = null)
+            updateBlocking(playlist, userPlaylistUpdate = null)
         }
 
         if (!loggedIn) {
-            deleteSynced(playlist)
+            deleteSyncedBlocking(playlist)
         }
     }
 
-    override fun deleteSynced() {
-        playlistDao.deleteDeleted()
+    override fun deleteSyncedBlocking() {
+        playlistDao.deleteDeletedBlocking()
     }
 
     override suspend fun resetDb() {
@@ -284,59 +290,50 @@ class PlaylistManagerImpl @Inject constructor(
         setupDefaultPlaylists()
     }
 
-    override fun deleteSynced(playlist: Playlist) {
+    override suspend fun deleteSynced(playlist: Playlist) {
         playlistDao.delete(playlist)
     }
 
-    override fun countEpisodesRx(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Flowable<Int> {
-        val query = getPlaylistQuery(playlist, limit = null, playbackManager = playbackManager)
-        return episodeManager.observeEpisodeCount(query)
+    override fun deleteSyncedBlocking(playlist: Playlist) {
+        playlistDao.deleteBlocking(playlist)
     }
 
-    override fun countEpisodes(id: Long?, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Int {
+    override fun countEpisodesRxFlowable(playlist: Playlist, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Flowable<Int> {
+        val query = getPlaylistQuery(playlist, limit = null, playbackManager = playbackManager)
+        return episodeManager.episodeCountRxFlowable(query)
+    }
+
+    override fun countEpisodesBlocking(id: Long?, episodeManager: EpisodeManager, playbackManager: PlaybackManager): Int {
         if (id == null) {
             return 0
         }
-        val playlist = findById(id) ?: return 0
+        val playlist = findByIdBlocking(id) ?: return 0
         val where = buildPlaylistWhere(playlist, playbackManager)
-        return episodeManager.countEpisodesWhere(where)
+        return episodeManager.countEpisodesWhereBlocking(where)
     }
 
-    override fun savePlaylistsOrder(playlists: List<Playlist>) {
-        playlistDao.updateSortPositions(playlists)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
-            PocketCastsShortcuts.update(
-                playlistManager = this,
-                force = true,
-                coroutineScope = applicationScope,
-                context = context,
-            )
-        }
-    }
-
-    override fun checkForEpisodesToDownload(episodeManager: EpisodeManager, playbackManager: PlaybackManager) {
-        val allPlaylists = findAll()
+    override fun checkForEpisodesToDownloadBlocking(episodeManager: EpisodeManager, playbackManager: PlaybackManager) {
+        val allPlaylists = findAllBlocking()
         if (allPlaylists.isEmpty()) return
 
         for (playlist in allPlaylists) {
             if (!playlist.autoDownload) continue
 
-            findEpisodes(playlist, episodeManager, playbackManager).take(playlist.autodownloadLimit).forEach { episode ->
+            findEpisodesBlocking(playlist, episodeManager, playbackManager).take(playlist.autodownloadLimit).forEach { episode ->
                 if (episode.isQueued || episode.isDownloaded || episode.isDownloading || episode.isExemptFromAutoDownload) {
                     return@forEach
                 }
 
-                DownloadHelper.addAutoDownloadedEpisodeToQueue(episode, "playlist " + playlist.title, downloadManager, episodeManager)
+                DownloadHelper.addAutoDownloadedEpisodeToQueue(episode, "playlist " + playlist.title, downloadManager, episodeManager, source = SourceView.PODCAST_LIST)
             }
         }
     }
 
-    override fun removePodcastFromPlaylists(podcastUuid: String) {
+    override fun removePodcastFromPlaylistsBlocking(podcastUuid: String) {
         if (podcastUuid.isBlank()) {
             return
         }
-        val playlists = findAll()
+        val playlists = findAllBlocking()
         for (playlist in playlists) {
             val podcastUuids = playlist.podcastUuidList.toMutableList()
             if (playlist.allPodcasts || podcastUuids.isEmpty()) {
@@ -348,17 +345,17 @@ class PlaylistManagerImpl @Inject constructor(
 
                 playlist.syncStatus = Playlist.SYNC_STATUS_NOT_SYNCED
                 playlist.podcastUuidList = podcastUuids
-                playlistDao.update(playlist)
+                playlistDao.updateBlocking(playlist)
             }
         }
     }
 
-    override fun findFirstByTitle(title: String): Playlist? {
-        return playlistDao.searchByTitle(title)
+    override fun findFirstByTitleBlocking(title: String): Playlist? {
+        return playlistDao.searchByTitleBlocking(title)
     }
 
-    override fun findPlaylistsToSync(): List<Playlist> {
-        return playlistDao.findNotSynced()
+    override fun findPlaylistsToSyncBlocking(): List<Playlist> {
+        return playlistDao.findNotSyncedBlocking()
     }
 
     /**
@@ -513,20 +510,24 @@ class PlaylistManagerImpl @Inject constructor(
         where.append("archived = 0")
 
         val playingEpisode = playbackManager?.getCurrentEpisode()?.uuid
-        val lastLoadedFromPodcastOrFilterUuid = settings.lastLoadedFromPodcastOrFilterUuid.value.uuid
+        val lastLoadedFromPodcastOrFilterUuid = settings.lastAutoPlaySource.value.id
         if (playingEpisode != null && lastLoadedFromPodcastOrFilterUuid == playlist.uuid) {
             where.insert(0, "(podcast_episodes.uuid = '$playingEpisode' OR (")
             where.append("))")
         }
     }
 
-    private fun markAsNotSynced(playlist: Playlist) {
+    private fun markAsNotSyncedBlocking(playlist: Playlist) {
         playlist.syncStatus = Playlist.SYNC_STATUS_NOT_SYNCED
-        playlistDao.updateSyncStatus(Playlist.SYNC_STATUS_NOT_SYNCED, playlist.uuid)
+        playlistDao.updateSyncStatusBlocking(Playlist.SYNC_STATUS_NOT_SYNCED, playlist.uuid)
     }
 
     fun countPlaylists(): Int {
-        return playlistDao.count()
+        return playlistDao.countBlocking()
+    }
+
+    fun countPlaylistsBlocking(): Int {
+        return playlistDao.countBlocking()
     }
 
     override fun getSystemDownloadsFilter(): Playlist {
@@ -548,7 +549,7 @@ class PlaylistManagerImpl @Inject constructor(
         )
     }
 
-    override fun markAllSynced() {
+    override suspend fun markAllSynced() {
         playlistDao.updateAllSyncStatus(Playlist.SYNC_STATUS_SYNCED)
     }
 }

@@ -2,7 +2,6 @@ package au.com.shiftyjelly.pocketcasts.podcasts.view.podcast
 
 import android.os.Bundle
 import android.view.View
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.os.bundleOf
 import androidx.fragment.app.viewModels
@@ -10,7 +9,7 @@ import androidx.preference.ListPreference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreference
 import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsEvent
-import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTrackerWrapper
+import au.com.shiftyjelly.pocketcasts.analytics.AnalyticsTracker
 import au.com.shiftyjelly.pocketcasts.models.type.TrimMode
 import au.com.shiftyjelly.pocketcasts.podcasts.R
 import au.com.shiftyjelly.pocketcasts.podcasts.view.components.PlaybackSpeedPreference
@@ -18,16 +17,15 @@ import au.com.shiftyjelly.pocketcasts.podcasts.viewmodel.PodcastEffectsViewModel
 import au.com.shiftyjelly.pocketcasts.repositories.playback.PlaybackManager
 import au.com.shiftyjelly.pocketcasts.ui.extensions.getThemeColor
 import au.com.shiftyjelly.pocketcasts.ui.extensions.getTintedDrawable
-import au.com.shiftyjelly.pocketcasts.ui.helper.StatusBarColor
+import au.com.shiftyjelly.pocketcasts.ui.helper.StatusBarIconColor
 import au.com.shiftyjelly.pocketcasts.ui.theme.Theme
-import au.com.shiftyjelly.pocketcasts.ui.theme.ThemeColor
-import au.com.shiftyjelly.pocketcasts.views.extensions.updateColors
+import au.com.shiftyjelly.pocketcasts.views.extensions.includeStatusBarPadding
+import au.com.shiftyjelly.pocketcasts.views.extensions.setup
 import au.com.shiftyjelly.pocketcasts.views.helper.NavigationIcon.BackArrow
 import au.com.shiftyjelly.pocketcasts.views.helper.ToolbarColors
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import au.com.shiftyjelly.pocketcasts.images.R as IR
-import au.com.shiftyjelly.pocketcasts.localization.R as LR
 import au.com.shiftyjelly.pocketcasts.ui.R as UR
 
 @AndroidEntryPoint
@@ -35,7 +33,7 @@ class PodcastEffectsFragment : PreferenceFragmentCompat() {
 
     @Inject lateinit var theme: Theme
 
-    @Inject lateinit var analyticsTracker: AnalyticsTrackerWrapper
+    @Inject lateinit var analyticsTracker: AnalyticsTracker
 
     private var preferenceCustomForPodcast: SwitchPreference? = null
     private var preferencePlaybackSpeed: PlaybackSpeedPreference? = null
@@ -44,6 +42,7 @@ class PodcastEffectsFragment : PreferenceFragmentCompat() {
     private var preferenceTrimMode: ListPreference? = null
 
     private val viewModel: PodcastEffectsViewModel by viewModels()
+    private var toolbar: Toolbar? = null
 
     companion object {
         const val ARG_PODCAST_UUID = "ARG_PODCAST_UUID"
@@ -65,6 +64,11 @@ class PodcastEffectsFragment : PreferenceFragmentCompat() {
         viewModel.loadPodcast(podcastUuid)
     }
 
+    override fun onDestroyView() {
+        toolbar = null
+        super.onDestroyView()
+    }
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.preferences_podcast_effects, rootKey)
 
@@ -81,11 +85,8 @@ class PodcastEffectsFragment : PreferenceFragmentCompat() {
         view.setBackgroundColor(view.context.getThemeColor(UR.attr.primary_ui_01))
         view.isClickable = true
 
-        val toolbar = view.findViewById<Toolbar>(R.id.toolbar)
-        toolbar.title = getString(LR.string.podcast_playback_effects)
-        toolbar.navigationIcon?.setTint(ThemeColor.secondaryIcon01(theme.activeTheme))
-
-        (activity as AppCompatActivity).setSupportActionBar(toolbar)
+        toolbar = view.findViewById(R.id.toolbar)
+        toolbar?.includeStatusBarPadding()
 
         preferencePlaybackSpeed?.isVisible = false
         preferenceTrimSilence?.isVisible = false
@@ -93,12 +94,24 @@ class PodcastEffectsFragment : PreferenceFragmentCompat() {
         preferenceTrimMode?.isVisible = false
 
         viewModel.podcast.observe(viewLifecycleOwner) { podcast ->
+            val context = context ?: return@observe
 
-            val colors = ToolbarColors.Podcast(podcast = podcast, theme = theme)
+            val colors = ToolbarColors.podcast(podcast = podcast, theme = theme)
 
             updateTintColor(colors.iconColor)
-            toolbar.updateColors(toolbarColors = colors, navigationIcon = BackArrow)
-            theme.updateWindowStatusBar(window = requireActivity().window, statusBarColor = StatusBarColor.Custom(colors.backgroundColor, true), context = requireContext())
+            toolbar?.setup(
+                title = podcast.title,
+                navigationIcon = BackArrow,
+                toolbarColors = colors,
+                theme = theme,
+                activity = activity,
+                includeStatusBarPadding = false,
+            )
+
+            theme.updateWindowStatusBarIcons(
+                window = requireActivity().window,
+                statusBarIconColor = StatusBarIconColor.Theme,
+            )
 
             preferenceCustomForPodcast?.isChecked = podcast.overrideGlobalEffects
 
@@ -160,10 +173,5 @@ class PodcastEffectsFragment : PreferenceFragmentCompat() {
         preferencePlaybackSpeed?.icon = context.getTintedDrawable(IR.drawable.ic_speed, tintColor)
         preferenceTrimSilence?.icon = context.getTintedDrawable(R.drawable.ic_silence, tintColor)
         preferenceBoostVolume?.icon = context.getTintedDrawable(R.drawable.ic_volumeboost, tintColor)
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        viewModel.trackSpeedChangeIfNeeded()
     }
 }
